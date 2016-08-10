@@ -6,4 +6,4 @@ About:
   # Instructions
   Clap in your hands twice and do a backflip to make this script works.
 --]]
--- version 1.0
+-- @version 1.0
