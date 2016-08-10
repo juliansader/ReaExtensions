@@ -1,9 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Test-ReaScripts" commit="df23965b89445e22e8e9b44857df86b8170859c5">
+<index version="1" name="Test-ReaScripts" commit="e7c5fced56f96c760118ca6adda449df7c517f5e">
   <category name="Envelopes">
+    <reapack name="test header 1.lua" type="script" desc="js_Notation - Set displayed length of selected notes to custom value.lua">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Sets the displayed length of selected notes (in the MIDI editor's notation view) to a value that the user can specify in a popup window.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="juliansader" time="2016-08-10T23:16:45Z">
+        <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/50189c728ef881171c008c3424b54c65fa1f7b82/Envelopes/test%20header%201.lua</source>
+      </version>
+    </reapack>
     <reapack name="test header 2.lua" type="script">
       <version name="1.0" time="2016-08-10T23:12:41Z">
         <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/df23965b89445e22e8e9b44857df86b8170859c5/Envelopes/test%20header%202.lua</source>
+      </version>
+    </reapack>
+    <reapack name="test header 3.lua" type="script" desc="This goes in the package browser.">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 This script does awesome things that will make you save 1 hour of repetitive work each day. # Instructions Clap in your hands twice and do a backflip to make this script works.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" time="2016-08-10T23:27:58Z">
+        <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/e7c5fced56f96c760118ca6adda449df7c517f5e/Envelopes/test%20header%203.lua</source>
       </version>
     </reapack>
   </category>
