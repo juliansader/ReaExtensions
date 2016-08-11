@@ -5,5 +5,5 @@ About:
   Sets the displayed length of selected notes (in the MIDI editor's notation view) to a 
   value that the user can specify in a popup window.
 Author: juliansader
-Version: 1.0
+Version: 1.1
 ]]
