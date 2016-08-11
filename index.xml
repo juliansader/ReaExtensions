@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Test-ReaScripts" commit="93c84802891f3d7a22e764cc4c5659e84b637cab">
+<index version="1" name="Test-ReaScripts" commit="35e6dbd8fadf992c4bd8b6bd52c15f6f5bd4b356">
   <category name="Envelopes">
     <reapack name="test header 1.lua" type="script" desc="js_Notation - Set displayed length of selected notes to custom value.lua">
       <metadata>
@@ -17,6 +17,9 @@
       </version>
       <version name="1.1" author="juliansader" time="2016-08-11T00:38:06Z">
         <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/93c84802891f3d7a22e764cc4c5659e84b637cab/Envelopes/test%20header%201.lua</source>
+      </version>
+      <version name="1.2" author="juliansader" time="2016-08-11T00:47:48Z">
+        <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/35e6dbd8fadf992c4bd8b6bd52c15f6f5bd4b356/Envelopes/test%20header%201.lua</source>
       </version>
     </reapack>
     <reapack name="test header 2.lua" type="script">
