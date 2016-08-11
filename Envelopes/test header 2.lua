@@ -5,4 +5,6 @@ About:
   test
 
   test2
+
+Author: juliansader
 ]]
