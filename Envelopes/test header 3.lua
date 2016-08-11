@@ -9,3 +9,7 @@ About:
   # Instructions
   Clap in your hands twice and do a backflip to make this script works.
 --]]
+
+--[[
+Version: 1.2
+]]
