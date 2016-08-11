@@ -1,6 +1,8 @@
 --[[
 Description: This goes in the package browser.
-Version: 1.0
+
+Author: juliansader
+Version: 1.1
 About:
   # Description
   This script does awesome things that will make you save 1 hour of repetitive work each day.
