@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Test-ReaScripts" commit="35e6dbd8fadf992c4bd8b6bd52c15f6f5bd4b356">
+<index version="1" name="Test-ReaScripts" commit="65f4e42a8266a299320ed14d7bfad82b151006ea">
   <category name="Envelopes">
     <reapack name="test header 1.lua" type="script" desc="js_Notation - Set displayed length of selected notes to custom value.lua">
       <metadata>
@@ -25,6 +25,20 @@
     <reapack name="test header 2.lua" type="script">
       <version name="1.0" time="2016-08-10T23:12:41Z">
         <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/df23965b89445e22e8e9b44857df86b8170859c5/Envelopes/test%20header%202.lua</source>
+      </version>
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 test\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 test2\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.1" time="2016-08-11T00:52:33Z">
+        <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/65f4e42a8266a299320ed14d7bfad82b151006ea/Envelopes/test%20header%202.lua</source>
       </version>
     </reapack>
     <reapack name="test header 3.lua" type="script" desc="This goes in the package browser.">
