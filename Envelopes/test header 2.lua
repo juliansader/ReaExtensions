@@ -1,10 +1,9 @@
--- @version 1.2
+-- @version 1.3
 --[[
+Author: juliansader
 About:
   # Description
   test
 
   test2
-
-Author: juliansader
 ]]
