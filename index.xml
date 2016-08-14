@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Test-ReaScripts" commit="d9117fd6297c31ca0e5733797fbab0fb3e125579">
+<index version="1" name="Test-ReaScripts" commit="1b076a057c8e9e54b67fd0debe19ee8c1e7313aa">
   <category name="Envelopes">
     <reapack name="test header 1.lua" type="script" desc="js_Notation - Set displayed length of selected notes to custom value.lua">
       <metadata>
@@ -9,9 +9,9 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Description\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Sets the displayed length of selected notes (in the MIDI editor's notation view) to a value that the user can specify in a popup window.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Author: juliansader\par}
 }
 ]]></description>
+        <link rel="screenshot">http://test.test.com/</link>
       </metadata>
       <version name="1.0" author="juliansader" time="2016-08-10T23:16:45Z">
         <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/50189c728ef881171c008c3424b54c65fa1f7b82/Envelopes/test%20header%201.lua</source>
@@ -27,6 +27,9 @@
       </version>
       <version name="1.4" time="2016-08-11T01:05:43Z">
         <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/7b12be68a5348c1c3b6e6285e811ffe7f21a8323/Envelopes/test%20header%201.lua</source>
+      </version>
+      <version name="1.5" author="juliansader" time="2016-08-14T22:17:12Z">
+        <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/1b076a057c8e9e54b67fd0debe19ee8c1e7313aa/Envelopes/test%20header%201.lua</source>
       </version>
     </reapack>
     <reapack name="test header 2.lua" type="script">
@@ -61,7 +64,9 @@
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Description\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 This script does awesome things that will make you save 1 hour of repetitive work each day. # Instructions Clap in your hands twice and do a backflip to make this script works.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 This script does awesome things that will make you save 1 hour of repetitive work each day.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Instructions\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Clap in your hands twice and do a backflip to make this script works.\par}
 }
 ]]></description>
       </metadata>
@@ -70,6 +75,9 @@
       </version>
       <version name="1.2" time="2016-08-11T01:11:16Z">
         <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/d9117fd6297c31ca0e5733797fbab0fb3e125579/Envelopes/test%20header%203.lua</source>
+      </version>
+      <version name="1.3" time="2016-08-11T01:14:01Z">
+        <source main="true">https://github.com/juliansader/Test-ReaScripts/raw/0820444b6f7211fb5772b1a94e878b1f5c3b8af4/Envelopes/test%20header%203.lua</source>
       </version>
     </reapack>
   </category>
