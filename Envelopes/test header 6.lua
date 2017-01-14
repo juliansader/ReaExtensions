@@ -1,6 +1,6 @@
 --[[
 ReaScript name: js_LFO Tool (MIDI editor version, insert CCs in time selection in lane under mouse).lua
-Version: v2.00
+Version: 2.00
 Author: juliansader    
 ]]
 
