@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <map>
 #include <set>
+#include <vector>
 #include <utility>
 #include <cstdint>
 
