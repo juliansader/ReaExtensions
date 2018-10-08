@@ -1510,12 +1510,11 @@ void JS_GDI_Polyline(void* deviceHDC, const char* packedX, const char* packedY, 
 // If we assume that POINT structs are always being packed into 8-byte chunks,
 //		we could have used a single packed string of x1, y1, x2, y2, etc.
 {
-	POINT* p = new POINT[numPoints];
+    std::vector<POINT> p(numPoints);
 	for (int i = 0; i < numPoints; i++)
 		p[i] = { ((int32_t*)packedX)[i], ((int32_t*)packedY)[i] };
 	DWORD n[1] = { (DWORD)numPoints };
-	PolyPolyline((HDC)deviceHDC, p, n, 1);
-	delete[] p;
+	PolyPolyline((HDC)deviceHDC, p.data(), n, 1);
 }
 
 void JS_GDI_FillEllipse(void* deviceHDC, int x1, int y1, int x2, int y2)
@@ -1537,11 +1536,10 @@ void JS_GDI_FillPolygon(void* deviceHDC, const char* packedX, const char* packed
 // If we assume that POINT structs are always being packed into 8-byte chunks,
 //		we could have used a single packed string of x1, y1, x2, y2, etc.
 {
-	POINT* p = new POINT[numPoints];
+    std::vector<POINT> p(numPoints);
 	for (int i = 0; i < numPoints; i++)
 		p[i] = { ((int32_t*)packedX)[i], ((int32_t*)packedY)[i] };
-	Polygon((HDC)deviceHDC, p, (uint32_t)numPoints);
-	delete[] p;
+	Polygon((HDC)deviceHDC, p.data(), (uint32_t)numPoints);
 }
 
 
