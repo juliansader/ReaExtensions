@@ -509,7 +509,7 @@ static void* __vararg_JS_LICE_Blit(void** arglist, int numparms)
 
 static void* __vararg_JS_LICE_RotatedBlit(void** arglist, int numparms)
 {
-	JS_LICE_RotatedBlit((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (void*)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, (bool)arglist[11], arglist[12] ? *(double*)arglist[12] : 0.0, (const char*)arglist[13], arglist[14] ? *(double*)arglist[14] : 0.0, arglist[15] ? *(double*)arglist[15] : 0.0);
+	JS_LICE_RotatedBlit((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (void*)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, arglist[11] ? *(double*)arglist[11] : 0.0, arglist[12] ? *(double*)arglist[12] : 0.0, (bool)arglist[13], arglist[14] ? *(double*)arglist[14] : 0.0, (const char*)arglist[15]);
 	return NULL;
 }
 
