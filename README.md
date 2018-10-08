@@ -1,1 +1,2 @@
-# Test-ReaScripts
+# ReaExtensions
+Extensions for REAPER.
