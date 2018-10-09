@@ -1,5 +1,4 @@
-#ifndef JS_REASCRIPTAPI_VARARG
-#define JS_REASCRIPTAPI_VARARG
+#pragma once
 
 #ifdef _WIN32
 #pragma warning(disable:4800) // disable "forcing value to bool..." warnings
@@ -693,6 +692,3 @@ static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
 	return JS_PtrFromStr((const char*)arglist[0]);
 }
 
-
-
-#endif

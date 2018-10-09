@@ -1,5 +1,4 @@
-#ifndef JS_REASCRIPTAPI_DEF
-#define JS_REASCRIPTAPI_DEF
+#pragma once
 
 #include "js_ReaScriptAPI.h"
 
@@ -231,5 +230,3 @@ APIdef aAPIdefs[] =
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-
-#endif
