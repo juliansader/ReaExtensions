@@ -1,5 +1,4 @@
-#ifndef JS_REASCRIPTAPI_H
-#define JS_REASCRIPTAPI_H
+#pragma once
 
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t *rec);
 
@@ -145,5 +144,3 @@ void* JS_PtrFromStr(const char* s);
 void  JS_Int(void* address, int offset, int* intOut);
 void  JS_Byte(void* address, int offset, int* byteOut);
 void  JS_Double(void* address, int offset, double* doubleOut);
-
-#endif

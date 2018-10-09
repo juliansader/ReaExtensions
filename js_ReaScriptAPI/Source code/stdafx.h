@@ -1,5 +1,4 @@
-#ifndef JS_REASCRIPTAPI_STDAFX
-#define JS_REASCRIPTAPI_STDAFX
+#pragma once
 
 #define _CRT_SECURE_NO_WARNINGS 1
 #define _CRT_NONSTDC_NO_DEPRECATE 1
@@ -46,5 +45,3 @@ BOOL(WINAPI *RemoveXPStyle)(HWND hwnd, int rm);
 #include "js_ReaScriptAPI.h"
 #include "js_ReaScriptAPI_vararg.h"
 #include "js_ReaScriptAPI_def.h"
-
-#endif

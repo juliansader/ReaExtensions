@@ -1,5 +1,4 @@
-#ifndef JS_REASCRIPTAPI_NAMESPACE
-#define JS_REASCRIPTAPI_NAMESPACE
+#pragma once
 
 namespace Julian
 {
@@ -217,5 +216,3 @@ namespace Julian
 		pair<UINT, std::string>(0x0400, "WM_USER")
 	};
 }
-
-#endif
