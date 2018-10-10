@@ -1867,6 +1867,12 @@ void JS_LICE_Line(void* bitmap, double x1, double y1, double x2, double y2, int 
 	LICE_Line((LICE_IBitmap*)bitmap, (float)x1, (float)y1, (float)x2, (float)y2, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
+void JS_LICE_Bezier(void* bitmap, double xstart, double ystart, double xctl1, double yctl1, double xctl2, double yctl2, double xend, double yend, double tol, int color, double alpha, const char* mode, bool antialias)
+{
+	GETINTMODE
+	LICE_DrawCBezier((LICE_IBitmap*)bitmap, xstart, ystart, xctl1, yctl1, xctl2, yctl2, xend, yend, (LICE_pixel)color, (float)alpha, intMode, antialias, tol);
+}
+
 
 int JS_LICE_GetPixel(void* bitmap, int x, int y)
 {
@@ -1919,3 +1925,6 @@ void JS_Double(void* address, int offset, double* doubleOut)
 {
 	*doubleOut = ((double*)address)[offset];
 }
+
+
+////////////////////////////////////////////////////////////////

@@ -92,7 +92,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Window_ScreenToClient), "void", "void*,int,int,int*,int*", "windowHWND,x,y,xOut,yOut", "Converts the screen coordinates of a specified point on the screen to client-area coordinates.", },
 	{ APIFUNC(JS_Window_ClientToScreen), "void", "void*,int,int,int*,int*", "windowHWND,x,y,xOut,yOut", "Converts the client-area coordinates of a specified point to screen coordinates.", },
 	{ APIFUNC(JS_Window_GetClientRect), "bool", "void*,int*,int*,int*,int*", "windowHWND,leftOut,topOut,rightOut,bottomOut", "Retrieves the coordinates of the client area rectangle of the specified window. The dimensions are given in screen coordinates relative to the upper-left corner of the screen.\nNOTE 1: Unlike the C++ function GetClientRect, this function returns the actual coordinates, not the width and height.\nNOTE 2: The pixel at (right, bottom) lies immediately outside the rectangle.", },
-	
+
 	{ APIFUNC(JS_Window_FromPoint), "void*", "int,int", "x,y", "Retrieves a HWND to the window that contains the specified point.", },
 	{ APIFUNC(JS_Window_GetParent), "void*", "void*", "windowHWND", "Retrieves a HWND to the specified window's parent or owner.\nReturns NULL if the window is unowned or if the function otherwise fails.", },
 	{ APIFUNC(JS_Window_IsChild), "bool", "void*,void*", "parentHWND,childHWND", "Determines whether a window is a child window or descendant window of a specified parent window.", },
@@ -126,7 +126,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Window_SetPosition), "void", "void*,int,int,int,int", "windowHWND,left,top,width,height", "Sets the window position and size.", },
 	{ APIFUNC(JS_Window_SetZOrder), "void", "void*,const char*,void*", "windowHWND,ZOrder,insertAfterHWND", "Sets the window Z order.\n\nParameters:\n * ZOrder: \"INSERT_AFTER\", \"BOTTOM\", \"TOPMOST\", \"NOTOPMOST\" or \"TOP\" ).\n * InsertAfterHWND: If ZOrder is INSERT_AFTER, insertAfterHWND must be a handle to the window to precede windowHWND in the Z order; otherwise, insertAfterHWND is ignored.", },
 	{ APIFUNC(JS_Window_GetLongPtr), "void*", "void*,const char*", "windowHWND,info", "Returns information about the specified window.\n\ninfo: \"USERDATA\", \"WNDPROC\", \"DLGPROC\", \"ID\", \"EXSTYLE\" or \"STYLE\".\n\nFor documentation about the types of information returned, refer to the Win32 function GetWindowLongPtr."},
-	
+
 	{ APIFUNC(JS_Window_GetTitle), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "Returns the title (if any) of the specified window.", },
 	{ APIFUNC(JS_Window_SetTitle), "bool", "void*,const char*", "windowHWND,title", "Changes the title of the specified window. Returns true if successful.", },
 
@@ -143,7 +143,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_WindowMessage_Release), "int", "void*,const char*", "windowHWND,messages", "Release intercepts of specified message types.\n\nParameters:\n * messages: \"WM_SETCURSOR,WM_MOUSEHWHEEL\" or \"0x0020,0x020E\", for example.", },
 	{ APIFUNC(JS_WindowMessage_ReleaseWindow), "void", "void*", "windowHWND", "Release script intercepts of window messages for specified window.", },
 	{ APIFUNC(JS_WindowMessage_ReleaseAll), "void", "", "", "Release script intercepts of window messages for all windows.", },
-	
+
 	{ APIFUNC(JS_Mouse_GetState), "int", "int", "flags", "Retrieves the states of mouse buttons and modifiers keys.\n\nParameters:\n * flags, state: The parameter and the return value both use the same format as gfx.mouse_cap. I.e., to get the states of the left mouse button and the ctrl key, use flags = 0b00000101.", },
 	{ APIFUNC(JS_Mouse_SetPosition), "bool", "int,int", "x,y", "Moves the mouse cursor to the specified coordinates.", },
 	{ APIFUNC(JS_Mouse_LoadCursor), "void*", "int", "cursorNumber", "Loads a cursor by number.\ncursorNumber: Same as used for gfx.setcursor, and includes some of Windows' predefined cursors (with numbers > 32000; refer to documentation for the Win32 C++ function LoadCursor), and REAPER's own cursors (with numbers < 2000). \nIf successful, returns a handle to the cursor, which can be used in JS_Mouse_SetCursor.", },
@@ -183,7 +183,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_GDI_Polyline), "void", "void*,const char*,const char*,int", "deviceHDC,packedX,packedY,numPoints", "packedX and packedY are strings of points, each packed as \"<i4\".", },
 	{ APIFUNC(JS_GDI_Blit), "void", "void*,int,int,void*,int,int,int,int", "destHDC,dstx,dsty,sourceHDC,srcx,srxy,width,height", "Blits between two device contexts, which may include LICE \"system bitmaps\"." , },
 	{ APIFUNC(JS_GDI_StretchBlit), "void", "void*,int,int,int,int,void*,int,int,int,int", "destHDC,dstx,dsty,dstw,dsth,sourceHDC,srcx,srxy,srcw,srch", "Blits between two device contexts, which may include LICE \"system bitmaps\"." , },
-	
+
 	{ APIFUNC(JS_LICE_CreateBitmap), "void*", "bool,int,int", "isSysBitmap,width,height", "", },
 	{ APIFUNC(JS_LICE_GetHeight), "int", "void*", "bitmap", "", },
 	{ APIFUNC(JS_LICE_GetWidth), "int", "void*", "bitmap", "", },
@@ -211,10 +211,12 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_LICE_FillPolygon), "void", "void*,const char*,const char*,int,int,double,const char*", "bitmap,packedX,packedY,numPoints,color,alpha,mode", "packedX and packedY are two strings of coordinates, each packed as \"<i4\".\n\nLICE modes : \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
 	{ APIFUNC(JS_LICE_FillCircle), "void", "void*,double,double,double,int,double,const char*,bool", "bitmap,cx,cy,r,color,alpha,mode,antialias", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
 
-	{ APIFUNC(JS_LICE_Line), "void", "void*,double,double,double,double,int,double,const char*,bool", "bitmap,x1,y1,x2,y2,color,alpha,mode,antialias", "", },
-	{ APIFUNC(JS_LICE_Arc), "void", "void*,double,double,double,double,double,int,double,const char*,bool", "bitmap,cx,cy,r,minAngle,maxAngle,color,alpha,mode,antialias", "", },
-	{ APIFUNC(JS_LICE_Circle), "void", "void*,double,double,double,int,double,const char*,bool", "bitmap,cx,cy,r,color,alpha,mode,antialias", "", },
-	{ APIFUNC(JS_LICE_RoundRect), "void", "void*,double,double,double,double,int,int,double,const char*,bool", "bitmap,x,y,w,h,cornerradius,color,alpha,mode,antialias", "", },
+	{ APIFUNC(JS_LICE_Line), "void", "void*,double,double,double,double,int,double,const char*,bool", "bitmap,x1,y1,x2,y2,color,alpha,mode,antialias", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
+	{ APIFUNC(JS_LICE_Bezier), "void", "void*,double,double,double,double,double,double,double,double,double,int,double,const char*,bool", "bitmap,xstart,ystart,xctl1,yctl1,xctl2,yctl2,xend,yend,tol,color,alpha,mode,antialias", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
+
+	{ APIFUNC(JS_LICE_Arc), "void", "void*,double,double,double,double,double,int,double,const char*,bool", "bitmap,cx,cy,r,minAngle,maxAngle,color,alpha,mode,antialias", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
+	{ APIFUNC(JS_LICE_Circle), "void", "void*,double,double,double,int,double,const char*,bool", "bitmap,cx,cy,r,color,alpha,mode,antialias", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
+	{ APIFUNC(JS_LICE_RoundRect), "void", "void*,double,double,double,double,int,int,double,const char*,bool", "bitmap,x,y,w,h,cornerradius,color,alpha,mode,antialias", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
 
 	{ APIFUNC(JS_LICE_GetPixel), "int", "void*,int,int", "bitmap,x,y", "Returns the color of the specified pixel.", },
 	{ APIFUNC(JS_LICE_PutPixel), "void", "void*,int,int,int,double,const char*", "bitmap,x,y,color,alpha,mode", "LICE modes: \"COPY\" (default if empty string), \"MASK\", \"ADD\", \"DODGE\", \"MUL\", \"OVERLAY\" or \"HSVADJ\", any of which may be combined with \"ALPHA\".\n\nLICE color format: 0xAARRGGBB (AA is only used in ALPHA mode).", },
