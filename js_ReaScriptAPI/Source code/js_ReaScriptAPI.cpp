@@ -1926,5 +1926,39 @@ void JS_Double(void* address, int offset, double* doubleOut)
 	*doubleOut = ((double*)address)[offset];
 }
 
+PCM_sink* Xen_PCM_sink_Create(const char* filename, int numchans, int samplerate)
+{
+	char cfg[] = { 'e','v','a','w', 32, 0 };
+	return PCM_Sink_Create(filename, cfg, sizeof(cfg), numchans, samplerate, true);
+}
+
+void Xen_PCM_sink_Destroy(PCM_sink* sink)
+{
+	delete sink;
+}
+
+int Xen_PCM_sink_Write(PCM_sink* sink, double* data, int numframes)
+{
+	if (sink == nullptr)
+		return 0;
+	int nch = sink->GetNumChannels();
+	// For some mysterious reason, the PCM_sinks want split audio buffers for writing, so need to do this
+	// buffer conversin stuff. Not ideal to do it this way, should really write a helper class.
+	static std::vector<double> s_convertbuffer;
+	if (s_convertbuffer.size() < numframes*nch)
+		s_convertbuffer.resize(numframes*nch);
+	double* writearraypointers[64];
+	memset(writearraypointers, 0, sizeof(double*) * 64);
+	for (int i = 0; i < nch; ++i)
+	{
+		writearraypointers[i] = &s_convertbuffer[numframes*i];
+		for (int j = 0; j < numframes; ++j)
+		{
+			writearraypointers[i][j] = data[j*nch + i];
+		}
+	}
+	sink->WriteDoubles(writearraypointers, numframes, nch, 0, 1);
+	return numframes;
+}
 
 ////////////////////////////////////////////////////////////////

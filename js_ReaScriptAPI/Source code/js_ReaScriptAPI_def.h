@@ -228,7 +228,10 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Int), "void", "void*,int,int*", "address,offset,intOut", "Returns the 4-byte signed integer at address[offset]. Offset is added as steps of 4 bytes each.", },
 	{ APIFUNC(JS_Byte), "void", "void*,int,int*", "address,offset,byteOut", "Returns the unsigned byte at address[offset]. Offset is added as steps of 1 byte each.", },
 	{ APIFUNC(JS_Double), "void", "void*,int,double*", "address,offset,doubleOut", "Returns the 8-byte floating point value at address[offset]. Offset is added as steps of 8 bytes each.", },
-
+	
+	{ APIFUNC(Xen_PCM_sink_Create), "PCM_sink*", "const char*,int,int", "filename,numchans,samplerate", "Creates PCM_sink for writing 32 bit floating point WAV", },
+	{ APIFUNC(Xen_PCM_sink_Destroy), "void", "PCM_sink*", "sink", "Destroy PCM_sink", },
+	{ APIFUNC(Xen_PCM_sink_Write), "int", "PCM_sink*,int,void*", "sink,numframes,data", "Write interleaved audio data into PCM_sink", }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -145,3 +145,7 @@ void* JS_PtrFromStr(const char* s);
 void  JS_Int(void* address, int offset, int* intOut);
 void  JS_Byte(void* address, int offset, int* byteOut);
 void  JS_Double(void* address, int offset, double* doubleOut);
+
+PCM_sink* Xen_PCM_sink_Create(const char* fn, int numchans, int sr);
+void Xen_PCM_sink_Destroy(PCM_sink* sink);
+int Xen_PCM_sink_Write(PCM_sink* sink, double* data, int numframes);
