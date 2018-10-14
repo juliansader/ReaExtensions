@@ -146,6 +146,9 @@ void  JS_Int(void* address, int offset, int* intOut);
 void  JS_Byte(void* address, int offset, int* byteOut);
 void  JS_Double(void* address, int offset, double* doubleOut);
 
-PCM_sink* Xen_PCM_sink_Create(const char* fn, int numchans, int sr);
-void Xen_PCM_sink_Destroy(PCM_sink* sink);
-int Xen_PCM_sink_Write(PCM_sink* sink, double* data, int numframes);
+class AudioWriter;
+
+AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samplerate);
+void Xen_AudioWriter_Destroy(AudioWriter* aw);
+int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes);
+

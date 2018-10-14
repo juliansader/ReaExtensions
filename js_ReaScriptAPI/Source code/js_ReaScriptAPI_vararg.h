@@ -698,25 +698,25 @@ static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
 	return JS_PtrFromStr((const char*)arglist[0]);
 }
 
-static void* __vararg_Xen_PCM_sink_Create(void** arglist, int numparms)
+static void* __vararg_Xen_AudioWriter_Create(void** arglist, int numparms)
 {
 	if (numparms > 2)
-		return Xen_PCM_sink_Create((const char*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2]);
+		return Xen_AudioWriter_Create((const char*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2]);
 	return nullptr;
 }
 
-static void* __vararg_Xen_PCM_sink_Destroy(void** arglist, int numparms)
+static void* __vararg_Xen_AudioWriter_Destroy(void** arglist, int numparms)
 {
 	if (numparms > 0)
-		Xen_PCM_sink_Destroy((PCM_sink*)arglist[0]);
+		Xen_AudioWriter_Destroy((AudioWriter*)arglist[0]);
 	return nullptr;
 }
 
-static void* __vararg_Xen_PCM_sink_Write(void** arglist, int numparms)
+static void* __vararg_Xen_AudioWriter_Write(void** arglist, int numparms)
 {
 	int result = 0;
 	if (numparms > 2)
-		result = Xen_PCM_sink_Write((PCM_sink*)arglist[0],(double*)arglist[2], (int)(INT_PTR)arglist[1]);
+		result = Xen_AudioWriter_Write((AudioWriter*)arglist[0],(double*)arglist[2], (int)(INT_PTR)arglist[1]);
 	return (void*)(INT_PTR)result;
 }
 
