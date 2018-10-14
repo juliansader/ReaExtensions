@@ -1964,6 +1964,7 @@ public:
 			return 0;
 		return m_sink->GetNumChannels();
 	}
+	bool IsReady() { return m_sink != nullptr; }
 private:
 	PCM_sink* m_sink = nullptr;
 	std::vector<double> m_convbuf;
@@ -1972,7 +1973,11 @@ private:
 
 AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samplerate)
 {
-	return new AudioWriter(filename, numchans, samplerate);
+	AudioWriter* aw = new AudioWriter(filename, numchans, samplerate);
+	if (aw->IsReady())
+		return aw;
+	delete aw;
+	return nullptr;
 }
 
 void Xen_AudioWriter_Destroy(AudioWriter* aw)
