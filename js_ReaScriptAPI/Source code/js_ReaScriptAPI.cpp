@@ -1926,5 +1926,70 @@ void JS_Double(void* address, int offset, double* doubleOut)
 	*doubleOut = ((double*)address)[offset];
 }
 
+class AudioWriter
+{
+public:
+	AudioWriter(const char* outfn, int numchans, int sr)
+	{
+		char cfg[] = { 'e','v','a','w', 32, 0 };
+		m_sink = PCM_Sink_Create(outfn, cfg, sizeof(cfg), numchans, sr, true);
+		m_convbuf.resize(65536); // reserve some initial space so might not need to resize later...
+		memset(m_writearraypointers, 0, sizeof(double*) * 64);
+	}
+	~AudioWriter()
+	{
+		delete m_sink;
+	}
+	int Write(double* data, int numframes)
+	{
+		if (m_sink == nullptr)
+			return 0;
+		int nch = m_sink->GetNumChannels();
+		if (m_convbuf.size() < numframes*nch)
+			m_convbuf.resize(numframes*nch);
+		for (int i = 0; i < nch; ++i)
+		{
+			m_writearraypointers[i] = &m_convbuf[numframes*i];
+			for (int j = 0; j < numframes; ++j)
+			{
+				m_writearraypointers[i][j] = data[j*nch + i];
+			}
+		}
+		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
+		return numframes;
+	}
+	int GetNumChans() 
+	{ 
+		if (m_sink == nullptr)
+			return 0;
+		return m_sink->GetNumChannels();
+	}
+	bool IsReady() { return m_sink != nullptr; }
+private:
+	PCM_sink* m_sink = nullptr;
+	std::vector<double> m_convbuf;
+	double* m_writearraypointers[64];
+};
+
+AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samplerate)
+{
+	AudioWriter* aw = new AudioWriter(filename, numchans, samplerate);
+	if (aw->IsReady())
+		return aw;
+	delete aw;
+	return nullptr;
+}
+
+void Xen_AudioWriter_Destroy(AudioWriter* aw)
+{
+	delete aw;
+}
+
+int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes)
+{
+	if (aw == nullptr)
+		return 0;
+	return aw->Write(data, numframes);
+}
 
 ////////////////////////////////////////////////////////////////

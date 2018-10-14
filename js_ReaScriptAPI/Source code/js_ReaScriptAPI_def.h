@@ -228,7 +228,10 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Int), "void", "void*,int,int*", "address,offset,intOut", "Returns the 4-byte signed integer at address[offset]. Offset is added as steps of 4 bytes each.", },
 	{ APIFUNC(JS_Byte), "void", "void*,int,int*", "address,offset,byteOut", "Returns the unsigned byte at address[offset]. Offset is added as steps of 1 byte each.", },
 	{ APIFUNC(JS_Double), "void", "void*,int,double*", "address,offset,doubleOut", "Returns the 8-byte floating point value at address[offset]. Offset is added as steps of 8 bytes each.", },
-
+	
+	{ APIFUNC(Xen_AudioWriter_Create), "AudioWriter*", "const char*,int,int", "filename,numchans,samplerate", "Creates writer for 32 bit floating point WAV", },
+	{ APIFUNC(Xen_AudioWriter_Destroy), "void", "AudioWriter*", "writer", "Destroys writer", },
+	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*", "writer,numframes,data", "Write interleaved audio data to disk", }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

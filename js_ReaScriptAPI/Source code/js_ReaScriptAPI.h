@@ -145,3 +145,10 @@ void* JS_PtrFromStr(const char* s);
 void  JS_Int(void* address, int offset, int* intOut);
 void  JS_Byte(void* address, int offset, int* byteOut);
 void  JS_Double(void* address, int offset, double* doubleOut);
+
+class AudioWriter;
+
+AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samplerate);
+void Xen_AudioWriter_Destroy(AudioWriter* aw);
+int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes);
+
