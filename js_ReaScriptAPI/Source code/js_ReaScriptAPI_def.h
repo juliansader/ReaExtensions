@@ -231,7 +231,7 @@ APIdef aAPIdefs[] =
 	
 	{ APIFUNC(Xen_AudioWriter_Create), "AudioWriter*", "const char*,int,int", "filename,numchans,samplerate", "Creates writer for 32 bit floating point WAV", },
 	{ APIFUNC(Xen_AudioWriter_Destroy), "void", "AudioWriter*", "writer", "Destroys writer", },
-	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*", "writer,numframes,data", "Write interleaved audio data to disk", }
+	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*,int", "writer,numframes,data,offset", "Write interleaved audio data to disk", }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
