@@ -1952,7 +1952,7 @@ public:
 			m_writearraypointers[i] = &m_convbuf[numframes*i];
 			for (int j = 0; j < numframes; ++j)
 			{
-				m_writearraypointers[i][j] = data[j*nch + i];
+				m_writearraypointers[i][j] = data[(j+1)*nch + i];
 			}
 		}
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
