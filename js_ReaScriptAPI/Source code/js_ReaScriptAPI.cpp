@@ -52,7 +52,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			temp[sizeof(temp) - 1] = '\0';
 			// Create permanent copy of temp string, so that REAPER can access it later again.
 			f.defstring = strdup(temp);
-			// Replace the three \r with \0.
+			// Replace the three \n with \0.
 			i = 0; countZeroes = 0; while (countZeroes < 3) { if (f.defstring[i] == '\n') { f.defstring[i] = 0; countZeroes++; } i++; }
 			// Each function must be registered in three ways:
 			// APIdef_... provides for converting parameters to vararg format, and for help text in API
@@ -71,7 +71,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.93;
+	*versionOut = 0.941;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1887,6 +1887,7 @@ void JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const
 
 
 /////////////////////////////////////////////////////////////////////////////////////
+// Undocumented functions:
 
 void JS_Window_AttachTopmostPin(void* windowHWND)
 {
@@ -1904,7 +1905,7 @@ bool JS_Window_RemoveXPStyle(void* windowHWND, bool remove)
 	return !!RemoveXPStyle((HWND)windowHWND, (BOOL)remove);
 }
 
-////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////
 
 void* JS_PtrFromStr(const char* s)
 {
@@ -1925,6 +1926,8 @@ void JS_Double(void* address, int offset, double* doubleOut)
 {
 	*doubleOut = ((double*)address)[offset];
 }
+
+///////////////////////////////////////////////////////////////////////
 
 class AudioWriter
 {
