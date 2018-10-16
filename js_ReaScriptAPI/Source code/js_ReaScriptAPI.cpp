@@ -1644,12 +1644,16 @@ bool JS_Window_SetScrollPos(void* windowHWND, const char* scrollbar, int positio
 	if (strchr(scrollbar, 'v') || strchr(scrollbar, 'V'))
 	{
 		isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_VERT, position, TRUE);
+		if (!isOK)
+			isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_VERT, position, TRUE);
 		if (isOK)
 			SendMessage((HWND)windowHWND, WM_VSCROLL, MAKEWPARAM(SB_THUMBPOSITION, position), 0);
 	}
 	else
 	{
 		isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_HORZ, position, TRUE);
+		if (!isOK)
+			isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_HORZ, position, TRUE);
 		if (isOK)
 			SendMessage((HWND)windowHWND, WM_HSCROLL, MAKEWPARAM(SB_THUMBPOSITION, position), 0);
 	}
