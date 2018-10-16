@@ -150,5 +150,5 @@ class AudioWriter;
 
 AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samplerate);
 void Xen_AudioWriter_Destroy(AudioWriter* aw);
-int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes);
+int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes,int offset);
 

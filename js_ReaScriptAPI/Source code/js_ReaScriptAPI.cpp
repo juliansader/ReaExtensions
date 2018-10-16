@@ -1940,7 +1940,7 @@ public:
 	{
 		delete m_sink;
 	}
-	int Write(double* data, int numframes)
+	int Write(double* data, int numframes, int offset)
 	{
 		if (m_sink == nullptr)
 			return 0;
@@ -1952,7 +1952,7 @@ public:
 			m_writearraypointers[i] = &m_convbuf[numframes*i];
 			for (int j = 0; j < numframes; ++j)
 			{
-				m_writearraypointers[i][j] = data[j*nch + i];
+				m_writearraypointers[i][j] = data[(j+offset)*nch + i];
 			}
 		}
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
@@ -1985,11 +1985,11 @@ void Xen_AudioWriter_Destroy(AudioWriter* aw)
 	delete aw;
 }
 
-int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes)
+int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offset)
 {
 	if (aw == nullptr)
 		return 0;
-	return aw->Write(data, numframes);
+	return aw->Write(data, numframes, offset);
 }
 
 ////////////////////////////////////////////////////////////////
