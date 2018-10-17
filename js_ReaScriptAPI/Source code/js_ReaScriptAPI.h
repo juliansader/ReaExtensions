@@ -15,6 +15,7 @@ void* JS_Window_GetParent(void* windowHWND);
 bool  JS_Window_IsChild(void* parentHWND, void* childHWND);
 void* JS_Window_GetRelated(void* windowHWND, const char* relation);
 
+HWND  JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title);
 void* JS_Window_Find(const char* title, bool exact);
 void* JS_Window_FindChild(void* parentHWND, const char* title, bool exact);
 void  JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray);
@@ -31,6 +32,8 @@ void  JS_Window_Resize(void* windowHWND, int width, int height);
 void  JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height);
 void  JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWND);
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info);
+void  JS_Window_SetOpacity_ObjC(void* windowHWND, double alpha);
+bool  JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value);
 
 void  JS_Window_SetFocus(void* windowHWND);
 void* JS_Window_GetFocus();
@@ -44,6 +47,7 @@ bool  JS_Window_IsVisible(void* windowHWND);
 
 bool  JS_Window_SetTitle(void* windowHWND, const char* title);
 void  JS_Window_GetTitle(void* windowHWND, char* buf, int buf_sz);
+void  JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz);
 
 void* JS_Window_HandleFromAddress(double address);
 void  JS_Window_AddressFromHandle(void* handle, double* addressOut);
@@ -150,5 +154,5 @@ class AudioWriter;
 
 AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samplerate);
 void Xen_AudioWriter_Destroy(AudioWriter* aw);
-int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes,int offset);
+int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offset);
 

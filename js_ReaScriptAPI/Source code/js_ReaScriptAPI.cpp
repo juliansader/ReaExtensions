@@ -52,7 +52,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			temp[sizeof(temp) - 1] = '\0';
 			// Create permanent copy of temp string, so that REAPER can access it later again.
 			f.defstring = strdup(temp);
-			// Replace the three \n with \0.
+			// Replace the three \r with \0.
 			i = 0; countZeroes = 0; while (countZeroes < 3) { if (f.defstring[i] == '\n') { f.defstring[i] = 0; countZeroes++; } i++; }
 			// Each function must be registered in three ways:
 			// APIdef_... provides for converting parameters to vararg format, and for help text in API
@@ -71,7 +71,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.941;
+	*versionOut = 0.95;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -296,6 +296,14 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 
 	return (void*)GetWindowLong((HWND)windowHWND, intMode);
 #endif
+}
+
+HWND JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title)
+{
+	// REAPER API cannot pass null pointers, so must do another way:
+	HWND		c = ((parentHWND == childHWND) ? nullptr : childHWND);
+	const char* t = ((strlen(title) == 0)	   ? nullptr : title);
+	return FindWindowEx(parentHWND, c, className, t);
 }
 
 
@@ -914,6 +922,47 @@ void JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfter
 	SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 }
 
+bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
+{
+#ifdef _WIN32
+	bool OK = false;
+	if (IsWindow(windowHWND))
+	{
+		if (SetWindowLongPtr(windowHWND, GWL_EXSTYLE, GetWindowLongPtr(windowHWND, GWL_EXSTYLE) | WS_EX_LAYERED))
+		{
+			if (strchr(mode, 'A'))
+			{
+				if (SetLayeredWindowAttributes(windowHWND, 0, (BYTE)(value * 255), LWA_ALPHA))
+					OK = true;
+			}
+			else
+			{
+				UINT v = (UINT)value;
+				if (SetLayeredWindowAttributes(windowHWND, (COLORREF)(((v & 0xFF0000) >> 16) | (v & 0x00FF00) | ((v & 0x0000FF) << 16)), 0, LWA_COLORKEY))
+					OK = true;
+			}
+		}
+	}
+	return OK;
+#elif __linux__
+	if (strchr(mode, 'C') || (!IsWindow(windowHWND)))
+		return false;
+	else
+	{
+		GdkWindow* w = (GdkWindow*)windowHWND->m_oswindow;
+		gdk_window_set_opacity(w, value);
+		return true;
+	}
+#elif __APPLE__
+	if (strchr(mode, 'C') || (!IsWindow(windowHWND)))
+		return false;
+	else
+	{
+		JS_Window_SetOpacity_ObjC((void*)windowHWND, value);
+		return true;
+	}
+#endif
+}
 
 
 bool JS_Window_SetTitle(void* windowHWND, const char* title)
@@ -926,6 +975,10 @@ void JS_Window_GetTitle(void* windowHWND, char* buf, int buf_sz)
 	GetWindowText((HWND)windowHWND, buf, buf_sz);
 }
 
+void JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz)
+{
+	GetClassName(windowHWND, buf, buf_sz);
+}
 
 
 void* JS_Window_HandleFromAddress(double address)
@@ -1890,8 +1943,8 @@ void JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const
 }
 
 
-/////////////////////////////////////////////////////////////////////////////////////
-// Undocumented functions:
+///////////////////////////////////////////////////////////
+// Undocumented functions
 
 void JS_Window_AttachTopmostPin(void* windowHWND)
 {
@@ -1909,7 +1962,7 @@ bool JS_Window_RemoveXPStyle(void* windowHWND, bool remove)
 	return !!RemoveXPStyle((HWND)windowHWND, (BOOL)remove);
 }
 
-///////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////
 
 void* JS_PtrFromStr(const char* s)
 {
@@ -1930,6 +1983,7 @@ void JS_Double(void* address, int offset, double* doubleOut)
 {
 	*doubleOut = ((double*)address)[offset];
 }
+
 
 ///////////////////////////////////////////////////////////////////////
 
@@ -1959,14 +2013,14 @@ public:
 			m_writearraypointers[i] = &m_convbuf[numframes*i];
 			for (int j = 0; j < numframes; ++j)
 			{
-				m_writearraypointers[i][j] = data[(j+offset)*nch + i];
+				m_writearraypointers[i][j] = data[(j + offset)*nch + i];
 			}
 		}
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
 		return numframes;
 	}
-	int GetNumChans() 
-	{ 
+	int GetNumChans()
+	{
 		if (m_sink == nullptr)
 			return 0;
 		return m_sink->GetNumChannels();

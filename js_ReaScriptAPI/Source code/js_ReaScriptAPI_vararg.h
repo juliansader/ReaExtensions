@@ -98,6 +98,11 @@ static void* __vararg_JS_Window_IsVisible(void** arglist, int numparms)
   return (void*)(intptr_t)JS_Window_IsVisible((void*)arglist[0]);
 }
 
+static void* __vararg_JS_Window_FindEx(void** arglist, int numparms)
+{
+	return (void*)JS_Window_FindEx((HWND)arglist[0], (HWND)arglist[1], (const char*)arglist[2], (const char*)arglist[3]);
+}
+
 static void* __vararg_JS_Window_Find(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_Window_Find((const char*)arglist[0], (bool)arglist[1]);
@@ -183,8 +188,8 @@ static void* __vararg_JS_Window_SetPosition(void** arglist, int numparms)
 
 static void* __vararg_JS_Window_SetZOrder(void** arglist, int numparms)
 {
-  JS_Window_SetZOrder((void*)arglist[0], (const char*)arglist[1], (void*)arglist[2]);
-  return NULL;
+	JS_Window_SetZOrder((void*)arglist[0], (const char*)arglist[1], (void*)arglist[2]);
+	return NULL;
 }
 
 static void* __vararg_JS_Window_GetLongPtr(void** arglist, int numparms)
@@ -192,16 +197,28 @@ static void* __vararg_JS_Window_GetLongPtr(void** arglist, int numparms)
 	return JS_Window_GetLongPtr((void*)arglist[0], (const char*)arglist[1]);
 }
 
+static void* __vararg_JS_Window_SetOpacity(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Window_SetOpacity((HWND)arglist[0], (const char*)arglist[1], arglist[2] ? *(double*)arglist[2] : 0.0);
+}
+
 static void* __vararg_JS_Window_GetTitle(void** arglist, int numparms)
 {
-  JS_Window_GetTitle((void*)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
-  return NULL;
+	JS_Window_GetTitle((void*)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
+	return NULL;
 }
 
 static void* __vararg_JS_Window_SetTitle(void** arglist, int numparms)
 {
-  return (void*)(intptr_t)JS_Window_SetTitle((void*)arglist[0], (const char*)arglist[1]);
+	return (void*)(intptr_t)JS_Window_SetTitle((void*)arglist[0], (const char*)arglist[1]);
 }
+
+static void* __vararg_JS_Window_GetClassName(void** arglist, int numparms)
+{
+	JS_Window_GetClassName((HWND)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
+	return nullptr;
+}
+
 
 static void* __vararg_JS_Window_IsWindow(void** arglist, int numparms)
 {
@@ -698,6 +715,8 @@ static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
 	return JS_PtrFromStr((const char*)arglist[0]);
 }
 
+//////////////////////////////////////////////////////////////////////
+
 static void* __vararg_Xen_AudioWriter_Create(void** arglist, int numparms)
 {
 	if (numparms > 2)
@@ -717,8 +736,6 @@ static void* __vararg_Xen_AudioWriter_Write(void** arglist, int numparms)
 	int result = 0;
 	if (numparms > 3)
 		result = Xen_AudioWriter_Write(
-		(AudioWriter*)arglist[0],(double*)arglist[2], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[3]);
+		(AudioWriter*)arglist[0], (double*)arglist[2], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[3]);
 	return (void*)(INT_PTR)result;
 }
-
-

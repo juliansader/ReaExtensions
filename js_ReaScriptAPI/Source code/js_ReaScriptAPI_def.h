@@ -109,6 +109,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Window_IsVisible), "bool", "void*", "windowHWND", "Determines the visibility state of the window.", },
 	{ APIFUNC(JS_Window_IsWindow), "bool", "void*", "windowHWND", "Determines whether the specified window handle identifies an existing window.", },
 
+	//{ APIFUNC(JS_Window_FindEx), "void*", "void*,void*,const char*,const char*", "parentHWND,childHWND,className,title", "Returns a handle to a child window whose class and title match the specified strings.\n\nParameters: * childWindow: The function searches child windows, beginning with the window *after* the specified child window. If childHWND is equal to parentHWND, the search begins with the first child window of parentHWND.\n * title: An empty string, \"\", will match all windows. (Search is not case sensitive.)\n\nWARNING: May not be fully implemented yet in MacOS and Linux.", },
 	{ APIFUNC(JS_Window_Find), "void*", "const char*,bool", "title,exact", "Returns a HWND to the top-level window whose title matches the specified string. This function does not search child window, and is not case sensitive.\n\nParameters:\n * exact: Match entire title exactly, or match substring of title.", },
 	{ APIFUNC(JS_Window_FindChild), "void*", "void*,const char*,bool", "parentHWND,title,exact", "Returns a HWND to the child window whose title matches the specified string.\n\nParameters:\n * exact: Match entire title exactly, or match substring of title.", },
 	{ APIFUNC(JS_Window_ArrayAllChild), "void", "void*,void*", "parentHWND,reaperarray", "Returns all child windows of the specified parent.\n\nThe addresses are stored in the provided reaper.array, and can be converted to REAPER objects (HWNDs) by the function JS_Window_HandleFromAddress.", },
@@ -126,9 +127,11 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Window_SetPosition), "void", "void*,int,int,int,int", "windowHWND,left,top,width,height", "Sets the window position and size.", },
 	{ APIFUNC(JS_Window_SetZOrder), "void", "void*,const char*,void*", "windowHWND,ZOrder,insertAfterHWND", "Sets the window Z order.\n\nParameters:\n * ZOrder: \"INSERT_AFTER\", \"BOTTOM\", \"TOPMOST\", \"NOTOPMOST\" or \"TOP\" ).\n * InsertAfterHWND: If ZOrder is INSERT_AFTER, insertAfterHWND must be a handle to the window to precede windowHWND in the Z order; otherwise, insertAfterHWND is ignored.", },
 	{ APIFUNC(JS_Window_GetLongPtr), "void*", "void*,const char*", "windowHWND,info", "Returns information about the specified window.\n\ninfo: \"USERDATA\", \"WNDPROC\", \"DLGPROC\", \"ID\", \"EXSTYLE\" or \"STYLE\".\n\nFor documentation about the types of information returned, refer to the Win32 function GetWindowLongPtr."},
+	{ APIFUNC(JS_Window_SetOpacity), "bool", "void*,const char*,double", "windowHWND,mode,value", "Sets the window opacity.\n\nParameters:\nmode: either \"ALPHA\" or \"COLOR\". \nvalue: If ALPHA, the specified value may range from zero to one, and will apply to the entire window. \nIf COLOR, value specifies a 0xRRGGBB color, and all pixels in this color will be made transparent. (All mouse clicks over transparent pixels will pass through, too).\n\nWARNING: COLOR mode is only available in Windows, not Linux or MacOS.", },
 
 	{ APIFUNC(JS_Window_GetTitle), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "Returns the title (if any) of the specified window.", },
 	{ APIFUNC(JS_Window_SetTitle), "bool", "void*,const char*", "windowHWND,title", "Changes the title of the specified window. Returns true if successful.", },
+	{ APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "WARNING: May not be fully implemented on MacOS and Linux.", },
 
 	{ APIFUNC(JS_Window_HandleFromAddress), "void*", "double", "address", "Converts an address to a handle (such as a HWND) that can be utilized by REAPER and other API functions.", },
 	{ APIFUNC(JS_Window_AddressFromHandle), "void", "void*,double*", "handle,addressOut", "", },
