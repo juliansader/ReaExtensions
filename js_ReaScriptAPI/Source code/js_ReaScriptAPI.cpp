@@ -1994,7 +1994,9 @@ void Xen_AudioWriter_Destroy(AudioWriter* aw)
 
 int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offset)
 {
-	if (aw == nullptr)
+	if (aw == nullptr || data == nullptr)
+		return 0;
+	if ((numframes < 1) || (offset < 0))
 		return 0;
 	return aw->Write(data, numframes, offset);
 }
