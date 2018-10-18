@@ -47,8 +47,9 @@ bool  JS_Window_IsVisible(void* windowHWND);
 
 bool  JS_Window_SetTitle(void* windowHWND, const char* title);
 void  JS_Window_GetTitle(void* windowHWND, char* buf, int buf_sz);
+#ifndef __APPLE__
 void  JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz);
-
+#endif
 void* JS_Window_HandleFromAddress(double address);
 void  JS_Window_AddressFromHandle(void* handle, double* addressOut);
 bool  JS_Window_IsWindow(void* windowHWND);
