@@ -975,12 +975,11 @@ void JS_Window_GetTitle(void* windowHWND, char* buf, int buf_sz)
 	GetWindowText((HWND)windowHWND, buf, buf_sz);
 }
 
-#ifndef __APPLE__
 void JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz)
 {
 	GetClassName(windowHWND, buf, buf_sz);
 }
-#endif
+
 
 void* JS_Window_HandleFromAddress(double address)
 {

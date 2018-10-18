@@ -131,10 +131,9 @@ APIdef aAPIdefs[] =
 
 	{ APIFUNC(JS_Window_GetTitle), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "Returns the title (if any) of the specified window.", },
 	{ APIFUNC(JS_Window_SetTitle), "bool", "void*,const char*", "windowHWND,title", "Changes the title of the specified window. Returns true if successful.", },
-#ifndef __APPLE__
-    { APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "WARNING: May not be fully implemented on MacOS and Linux.", },
-#endif
-    { APIFUNC(JS_Window_HandleFromAddress), "void*", "double", "address", "Converts an address to a handle (such as a HWND) that can be utilized by REAPER and other API functions.", },
+	{ APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "WARNING: May not be fully implemented on MacOS and Linux.", },
+
+	{ APIFUNC(JS_Window_HandleFromAddress), "void*", "double", "address", "Converts an address to a handle (such as a HWND) that can be utilized by REAPER and other API functions.", },
 	{ APIFUNC(JS_Window_AddressFromHandle), "void", "void*,double*", "handle,addressOut", "", },
 	{ APIFUNC(JS_PtrFromStr), "void*", "const char*", "s", "", },
 
