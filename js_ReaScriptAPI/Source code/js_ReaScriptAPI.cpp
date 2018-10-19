@@ -2055,4 +2055,19 @@ int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offs
 	return aw->Write(data, numframes, offset);
 }
 
+int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffset, int numframes, int numchans, double samplerate, double positioninfile)
+{
+	if (src == nullptr || numframes<1 || numchans < 1 || samplerate < 1.0)
+		return 0;
+	PCM_source_transfer_t block;
+	memset(&block, 0, sizeof(PCM_source_transfer_t));
+	block.time_s = positioninfile; // seeking in the source is based on seconds
+	block.length = numframes;
+	block.nch = numchans; // the source will attempt to render as many channels as requested
+	block.samplerate = samplerate; // properly implemented sources will resample to requested samplerate
+	block.samples = &destbuf[destbufoffset];
+	src->GetSamples(&block);
+	return block.samples_out;
+}
+
 ////////////////////////////////////////////////////////////////
