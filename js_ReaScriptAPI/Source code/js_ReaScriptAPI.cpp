@@ -1986,6 +1986,18 @@ void JS_Double(void* address, int offset, double* doubleOut)
 
 ///////////////////////////////////////////////////////////////////////
 
+inline int getArraySize(double* arr)
+{
+	if (arr == nullptr)
+		return 0;
+	int* bufptr = (int*)arr;
+	int r = bufptr[1];
+	if (r < 1 || r>(4 * 1024 * 1024)) // size is apparently nonsense
+		return 0;
+	return r;
+}
+
+
 class AudioWriter
 {
 public:
@@ -2054,9 +2066,13 @@ int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offs
 	return aw->Write(data, numframes, offset);
 }
 
+
 int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffset, int numframes, int numchans, double samplerate, double positioninfile)
 {
-	if (src == nullptr || numframes<1 || numchans < 1 || samplerate < 1.0)
+	if (src == nullptr || destbuf==nullptr || numframes<1 || numchans < 1 || samplerate < 1.0)
+		return 0;
+	int bufsize = getArraySize(destbuf);
+	if (bufsize == 0)
 		return 0;
 	PCM_source_transfer_t block;
 	memset(&block, 0, sizeof(PCM_source_transfer_t));
