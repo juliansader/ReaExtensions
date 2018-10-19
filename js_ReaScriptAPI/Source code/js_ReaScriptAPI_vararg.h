@@ -213,13 +213,11 @@ static void* __vararg_JS_Window_SetTitle(void** arglist, int numparms)
 	return (void*)(intptr_t)JS_Window_SetTitle((void*)arglist[0], (const char*)arglist[1]);
 }
 
-#ifndef __APPLE__
 static void* __vararg_JS_Window_GetClassName(void** arglist, int numparms)
 {
 	JS_Window_GetClassName((HWND)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
 	return nullptr;
 }
-#endif
 
 static void* __vararg_JS_Window_IsWindow(void** arglist, int numparms)
 {
