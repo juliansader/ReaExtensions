@@ -980,7 +980,6 @@ void JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz)
 	GetClassName(windowHWND, buf, buf_sz);
 }
 
-
 void* JS_Window_HandleFromAddress(double address)
 {
 	// Casting to intptr_t removes fractions and, in case of 32-bit systems, truncates too large addresses.
@@ -1987,6 +1986,18 @@ void JS_Double(void* address, int offset, double* doubleOut)
 
 ///////////////////////////////////////////////////////////////////////
 
+inline int getArraySize(double* arr)
+{
+	if (arr == nullptr)
+		return 0;
+	int* bufptr = (int*)arr;
+	int r = bufptr[1];
+	if (r < 1 || r>(4 * 1024 * 1024)) // size is apparently nonsense
+		return 0;
+	return r;
+}
+
+
 class AudioWriter
 {
 public:
@@ -2053,6 +2064,25 @@ int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offs
 	if ((numframes < 1) || (offset < 0))
 		return 0;
 	return aw->Write(data, numframes, offset);
+}
+
+
+int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffset, int numframes, int numchans, double samplerate, double positioninfile)
+{
+	if (src == nullptr || destbuf==nullptr || numframes<1 || numchans < 1 || samplerate < 1.0)
+		return 0;
+	int bufsize = getArraySize(destbuf);
+	if (bufsize == 0)
+		return 0;
+	PCM_source_transfer_t block;
+	memset(&block, 0, sizeof(PCM_source_transfer_t));
+	block.time_s = positioninfile; // seeking in the source is based on seconds
+	block.length = numframes;
+	block.nch = numchans; // the source will attempt to render as many channels as requested
+	block.samplerate = samplerate; // properly implemented sources will resample to requested samplerate
+	block.samples = &destbuf[destbufoffset];
+	src->GetSamples(&block);
+	return block.samples_out;
 }
 
 ////////////////////////////////////////////////////////////////

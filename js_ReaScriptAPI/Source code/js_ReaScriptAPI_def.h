@@ -131,9 +131,10 @@ APIdef aAPIdefs[] =
 
 	{ APIFUNC(JS_Window_GetTitle), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "Returns the title (if any) of the specified window.", },
 	{ APIFUNC(JS_Window_SetTitle), "bool", "void*,const char*", "windowHWND,title", "Changes the title of the specified window. Returns true if successful.", },
-	{ APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "WARNING: May not be fully implemented on MacOS and Linux.", },
 
-	{ APIFUNC(JS_Window_HandleFromAddress), "void*", "double", "address", "Converts an address to a handle (such as a HWND) that can be utilized by REAPER and other API functions.", },
+    { APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,buf,buf_sz", "WARNING: May not be fully implemented on MacOS and Linux.", },
+
+    { APIFUNC(JS_Window_HandleFromAddress), "void*", "double", "address", "Converts an address to a handle (such as a HWND) that can be utilized by REAPER and other API functions.", },
 	{ APIFUNC(JS_Window_AddressFromHandle), "void", "void*,double*", "handle,addressOut", "", },
 	{ APIFUNC(JS_PtrFromStr), "void*", "const char*", "s", "", },
 
@@ -234,7 +235,8 @@ APIdef aAPIdefs[] =
 	
 	{ APIFUNC(Xen_AudioWriter_Create), "AudioWriter*", "const char*,int,int", "filename,numchans,samplerate", "Creates writer for 32 bit floating point WAV", },
 	{ APIFUNC(Xen_AudioWriter_Destroy), "void", "AudioWriter*", "writer", "Destroys writer", },
-	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*,int", "writer,numframes,data,offset", "Write interleaved audio data to disk", }
+	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*,int", "writer,numframes,data,offset", "Write interleaved audio data to disk", },
+	{ APIFUNC(Xen_GetMediaSourceSamples), "int", "PCM_source*,void*,int,int,int,double,double", "src,destbuf,destbufoffset,numframes,numchans,samplerate,sourceposition", "Get interleaved audio data from media source", }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
