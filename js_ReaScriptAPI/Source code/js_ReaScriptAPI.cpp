@@ -2017,6 +2017,8 @@ public:
 		if (m_sink == nullptr)
 			return 0;
 		int nch = m_sink->GetNumChannels();
+		if ((numframes * nch) + offset > getArraySize(data))
+			return 0;
 		if (m_convbuf.size() < numframes*nch)
 			m_convbuf.resize(numframes*nch);
 		for (int i = 0; i < nch; ++i)
