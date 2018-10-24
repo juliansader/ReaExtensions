@@ -2076,12 +2076,14 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 	int bufsize = getArraySize(destbuf);
 	if (bufsize == 0)
 		return 0;
+	if ((numframes*numchans) + destbufoffset > bufsize)
+		return 0;
 	PCM_source_transfer_t block;
 	memset(&block, 0, sizeof(PCM_source_transfer_t));
 	block.time_s = positioninfile; // seeking in the source is based on seconds
 	block.length = numframes;
-	block.nch = numchans; // the source will attempt to render as many channels as requested
-	block.samplerate = samplerate; // properly implemented sources will resample to requested samplerate
+	block.nch = numchans; // the source should attempt to render as many channels as requested
+	block.samplerate = samplerate; // properly implemented sources should resample to requested samplerate
 	block.samples = &destbuf[destbufoffset];
 	src->GetSamples(&block);
 	return block.samples_out;
