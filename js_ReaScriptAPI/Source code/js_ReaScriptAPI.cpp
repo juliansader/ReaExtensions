@@ -1997,6 +1997,7 @@ inline int getArraySize(double* arr)
 	return r;
 }
 
+// Class that manages both a PCM_sink instance and some helper buffers
 
 class AudioWriter
 {
@@ -2029,6 +2030,11 @@ public:
 				m_writearraypointers[i][j] = data[(j + offset)*nch + i];
 			}
 		}
+		/*
+		For mysterious reasons, WriteDoubles wants a split audio buffer (array of pointers into mono audio buffers), 
+		which is the reason the helper buffer and copying data into it is needed. Pretty much everything 
+		else in the Reaper API seems to be using interleaved buffers for audio...
+		*/
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
 		return numframes;
 	}
@@ -2050,7 +2056,7 @@ AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samp
 	AudioWriter* aw = new AudioWriter(filename, numchans, samplerate);
 	if (aw->IsReady())
 		return aw;
-	delete aw;
+	delete aw; // sink creation failed, delete created instance and return null
 	return nullptr;
 }
 
