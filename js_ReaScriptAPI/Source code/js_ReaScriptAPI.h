@@ -32,7 +32,7 @@ void  JS_Window_Resize(void* windowHWND, int width, int height);
 void  JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height);
 void  JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWND);
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info);
-void  JS_Window_SetOpacity_ObjC(void* windowHWND, double alpha);
+bool  JS_Window_SetOpacity_ObjC(void* windowHWND, double alpha);
 bool  JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value);
 
 void  JS_Window_SetFocus(void* windowHWND);
@@ -56,6 +56,7 @@ bool  JS_Window_IsWindow(void* windowHWND);
 
 int   JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passThrough);
 int   JS_WindowMessage_InterceptList(void* windowHWND, const char* messages);
+int   JS_WindowMessage_PassThrough(void* windowHWND, const char* message, bool passThrough);
 bool  JS_WindowMessage_ListIntercepts(void* windowHWND, char* buf, int buf_sz);
 bool  JS_WindowMessage_Post(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh);
 int   JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh);

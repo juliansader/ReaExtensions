@@ -260,6 +260,11 @@ static void* __vararg_JS_WindowMessage_InterceptList(void** arglist, int numparm
 	return (void*)(intptr_t)JS_WindowMessage_InterceptList((void*)arglist[0], (const char*)arglist[1]);
 }
 
+static void* __vararg_JS_WindowMessage_PassThrough(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_WindowMessage_PassThrough(arglist[0], (const char*)arglist[1], (bool)arglist[2]);
+}
+
 static void* __vararg_JS_WindowMessage_ListIntercepts(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_WindowMessage_ListIntercepts((void*)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);

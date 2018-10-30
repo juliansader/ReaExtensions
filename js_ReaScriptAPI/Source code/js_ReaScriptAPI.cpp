@@ -71,7 +71,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.95;
+	*versionOut = 0.951;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -924,44 +924,43 @@ void JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfter
 
 bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 {
-#ifdef _WIN32
 	bool OK = false;
 	if (IsWindow(windowHWND))
 	{
-		if (SetWindowLongPtr(windowHWND, GWL_EXSTYLE, GetWindowLongPtr(windowHWND, GWL_EXSTYLE) | WS_EX_LAYERED))
+#ifdef _WIN32
+		if (GetWindowLongPtr(windowHWND, GWL_STYLE) & WS_THICKFRAME)
+		{
+			if (SetWindowLongPtr(windowHWND, GWL_EXSTYLE, GetWindowLongPtr(windowHWND, GWL_EXSTYLE) | WS_EX_LAYERED))
+			{
+				if (strchr(mode, 'A'))
+					OK = !!(SetLayeredWindowAttributes(windowHWND, 0, (BYTE)(value * 255), LWA_ALPHA));
+				else
+				{
+					UINT v = (UINT)value;
+					OK = !!(SetLayeredWindowAttributes(windowHWND, (COLORREF)(((v & 0xFF0000) >> 16) | (v & 0x00FF00) | ((v & 0x0000FF) << 16)), 0, LWA_COLORKEY));
+				}
+#elif __linux__
+		if (GetWindowLong(windowHWND, GWL_STYLE) & WS_THICKFRAME)
+		{
+			if (strchr(mode, 'A') || (!IsWindow(windowHWND)))
+			{
+				GdkWindow* w = (GdkWindow*)windowHWND->m_oswindow;
+				if (w)
+				{
+					gdk_window_set_opacity(w, value);
+					OK = true;
+				}
+#elif __APPLE__
+		if (GetWindowLong(windowHWND, GWL_STYLE) & WS_THICKFRAME)
 		{
 			if (strchr(mode, 'A'))
 			{
-				if (SetLayeredWindowAttributes(windowHWND, 0, (BYTE)(value * 255), LWA_ALPHA))
-					OK = true;
-			}
-			else
-			{
-				UINT v = (UINT)value;
-				if (SetLayeredWindowAttributes(windowHWND, (COLORREF)(((v & 0xFF0000) >> 16) | (v & 0x00FF00) | ((v & 0x0000FF) << 16)), 0, LWA_COLORKEY))
-					OK = true;
+				OK = JS_Window_SetOpacity_ObjC((void*)windowHWND, value);
+#endif
 			}
 		}
 	}
 	return OK;
-#elif __linux__
-	if (strchr(mode, 'C') || (!IsWindow(windowHWND)))
-		return false;
-	else
-	{
-		GdkWindow* w = (GdkWindow*)windowHWND->m_oswindow;
-		gdk_window_set_opacity(w, value);
-		return true;
-	}
-#elif __APPLE__
-	if (strchr(mode, 'C') || (!IsWindow(windowHWND)))
-		return false;
-	else
-	{
-		JS_Window_SetOpacity_ObjC((void*)windowHWND, value);
-		return true;
-	}
-#endif
 }
 
 
@@ -1249,6 +1248,38 @@ int JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passt
 	}
 
 	Julian::mapWindowToData[hwnd].messages.emplace(uMsg, sMsgData{ passthrough, 0, 0, 0 });
+	return 1;
+}
+
+int JS_WindowMessage_PassThrough(void* windowHWND, const char* message, bool passThrough)
+{
+	using namespace Julian;
+	HWND hwnd = (HWND)windowHWND;
+	UINT uMsg;
+
+	// Is this window already being intercepted?
+	if (Julian::mapWindowToData.count(hwnd) == 0)
+		return ERR_ALREADY_INTERCEPTED; // Actually, NOT intercepted
+
+	// Convert string to UINT
+	string msgString = message;
+	if (mapWM_toMsg.count(msgString))
+		uMsg = mapWM_toMsg[msgString];
+	else
+	{
+		errno = 0;
+		uMsg = strtoul(message, nullptr, 16);
+		if (errno != 0 || (uMsg == 0 && !(strstr(message, "0x0000")))) // 0x0000 is a valid message type, so cannot assume 0 is error.
+			return ERR_PARSING;
+	}
+
+	// Is this message type actually already being intercepted?
+	if (Julian::mapWindowToData[hwnd].messages.count(uMsg) == 0)
+		return ERR_ALREADY_INTERCEPTED;
+
+	// Change passthrough
+	Julian::mapWindowToData[hwnd].messages[uMsg].passthrough = passThrough;
+
 	return 1;
 }
 
