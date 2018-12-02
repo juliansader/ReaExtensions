@@ -5,9 +5,46 @@ namespace Julian
 	using namespace std; 
 
 	constexpr bool ENV32BIT = (sizeof(void*) == 4);
+	constexpr int TEMP_LEN  = 65;	// For temporary storage of pointer strings.
+	constexpr int API_LEN   = 1024;	// Maximum length of strings passed between Lua and API (when not using NeedXXX suffix).
+	constexpr int EXT_LEN   = 16000;	// What is the maximum length of ExtState strings? 
+	constexpr int MAX_CHARS_PER_HWND = 19*4; // * (MB_LEN_MAX); // Maximum possble chars used by each HWND when sprintf'ing to string in format "0x%llx,".
+	constexpr int MAX_CHARS_PER_INT = (1 + sizeof(int) * 3) * 4; // Maximum possble chars used by each int when sprintf'ing to string in format "%u,".
+
+	bool GOTREALLOC;
+
+	// API functions that return strings (with const char* return value), will return pointers to this char array.
+	// REAPER immediately converts this array into Lua strings, 
+	char longString[EXT_LEN];
+
+	// Bitmaps can use up lots of RAM, so to ensure that all bitmaps are destroyed when REAPER exits,
+	//		all active bitmaps are stored here, and will be destroyed by the REAPER_PLUGIN_ENTRYPOINT function.
+	set<LICE_IBitmap*> LICEBitmaps;
+
+
+	set<HWND>	foundHWNDs;
+	char		findTitle[1024]; // Title text that must be matched
+	bool		findExact;  // Match exactly, or substring?
+	char		tempTitle[1024];   // Temprarily store window titles returned by GetWindowText
+
+	HWND		hwnd;  // HWND that was found (for single-window versions of functions)
+
+	char*		hwndString; // List of all matching HWNDs (for List version of functions)
+	unsigned int	hwndLen;
+	double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
 
 	// While windows are being enumerated, this struct stores the information
 	//		such as the title text that must be matched, as well as the list of all matching window HWNDs.
+	struct sEnumWindows
+	{
+		const char* target; // Title text that must be matched
+		bool		exact;  // Match exactly, or substring?
+		char*		temp;   // Temporarily store window titles returned by GetWindowText
+		unsigned int	tempLen;
+		set<HWND>*	foundHWNDs;  // HWND that was found (for single-window versions of functions)
+		//double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
+	};
+	/*
 	struct sEnumWindows
 	{
 		const char* target; // Title text that must be matched
@@ -19,10 +56,7 @@ namespace Julian
 		unsigned int	hwndLen;
 		double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
 	};
-	constexpr int TEMP_LEN = 65;	// For temporary storage of pointer strings.
-	constexpr int API_LEN = 1024;	// Maximum length of strings passed between Lua and API.
-	constexpr int EXT_LEN = 16000;	// What is the maximum length of ExtState strings? 
-	
+	*/
 
 	// Error codes for WindowMessage_Intercept
 	constexpr int ERR_ALREADY_INTERCEPTED = 0;
@@ -59,8 +93,6 @@ namespace Julian
 	// THE MAIN MAP FOR ALL INTERCEPTS
 	// Each window that is being intercepted, will be mapped to its data struct.
 	std::map <HWND, sWindowData> mapWindowToData;
-
-
 
 	// This map contains all the WM_ messages in swell-types.h. These can be assumed to be valid cross-platform.
 	std::map<std::string, UINT> mapWM_toMsg
@@ -141,78 +173,6 @@ namespace Julian
 		pair<std::string, UINT>("WM_USER", 0x0400)
 	};
 
-	std::map<UINT, std::string> mapMsgToWM_
-	{
-		pair<UINT, std::string>(0x0001, "WM_CREATE"),
-		pair<UINT, std::string>(0x0002, "WM_DESTROY"),
-		pair<UINT, std::string>(0x0003, "WM_MOVE"),
-		pair<UINT, std::string>(0x0005, "WM_SIZE"),
-		pair<UINT, std::string>(0x0006, "WM_ACTIVATE"),
-		pair<UINT, std::string>(0x000F, "WM_PAINT"),
-		pair<UINT, std::string>(0x0010, "WM_CLOSE"),
-		pair<UINT, std::string>(0x0014, "WM_ERASEBKGND"),
-		pair<UINT, std::string>(0x0018, "WM_SHOWWINDOW"),
-		pair<UINT, std::string>(0x001C, "WM_ACTIVATEAPP"),
-		pair<UINT, std::string>(0x0020, "WM_SETCURSOR"),
-		pair<UINT, std::string>(0x0021, "WM_MOUSEACTIVATE"),
-		pair<UINT, std::string>(0x0024, "WM_GETMINMAXINFO"),
-		pair<UINT, std::string>(0x002B, "WM_DRAWITEM"),
-		pair<UINT, std::string>(0x0030, "WM_SETFONT"),
-		pair<UINT, std::string>(0x0031, "WM_GETFONT"),
-		pair<UINT, std::string>(0x004A, "WM_COPYDATA"),
-		pair<UINT, std::string>(0x004E, "WM_NOTIFY"),
-		pair<UINT, std::string>(0x007B, "WM_CONTEXTMENU"),
-		pair<UINT, std::string>(0x007D, "WM_STYLECHANGED"),
-		pair<UINT, std::string>(0x007E, "WM_DISPLAYCHANGE"),
-		pair<UINT, std::string>(0x0082, "WM_NCDESTROY"),
-		pair<UINT, std::string>(0x0083, "WM_NCCALCSIZE"),
-		pair<UINT, std::string>(0x0084, "WM_NCHITTEST"),
-		pair<UINT, std::string>(0x0085, "WM_NCPAINT"),
-		pair<UINT, std::string>(0x00A0, "WM_NCMOUSEMOVE"),
-		pair<UINT, std::string>(0x00A1, "WM_NCLBUTTONDOWN"),
-		pair<UINT, std::string>(0x00A2, "WM_NCLBUTTONUP"),
-		pair<UINT, std::string>(0x00A3, "WM_NCLBUTTONDBLCLK"),
-		pair<UINT, std::string>(0x00A4, "WM_NCRBUTTONDOWN"),
-		pair<UINT, std::string>(0x00A5, "WM_NCRBUTTONUP"),
-		pair<UINT, std::string>(0x00A6, "WM_NCRBUTTONDBLCLK"),
-		pair<UINT, std::string>(0x00A7, "WM_NCMBUTTONDOWN"),
-		pair<UINT, std::string>(0x00A8, "WM_NCMBUTTONUP"),
-		pair<UINT, std::string>(0x00A9, "WM_NCMBUTTONDBLCLK"),
-		pair<UINT, std::string>(0x0100, "WM_KEYFIRST"),
-		pair<UINT, std::string>(0x0100, "WM_KEYDOWN"),
-		pair<UINT, std::string>(0x0101, "WM_KEYUP"),
-		pair<UINT, std::string>(0x0102, "WM_CHAR"),
-		pair<UINT, std::string>(0x0103, "WM_DEADCHAR"),
-		pair<UINT, std::string>(0x0104, "WM_SYSKEYDOWN"),
-		pair<UINT, std::string>(0x0105, "WM_SYSKEYUP"),
-		pair<UINT, std::string>(0x0106, "WM_SYSCHAR"),
-		pair<UINT, std::string>(0x0107, "WM_SYSDEADCHAR"),
-		pair<UINT, std::string>(0x0108, "WM_KEYLAST"),
-		pair<UINT, std::string>(0x0110, "WM_INITDIALOG"),
-		pair<UINT, std::string>(0x0111, "WM_COMMAND"),
-		pair<UINT, std::string>(0x0112, "WM_SYSCOMMAND"),
-		pair<UINT, std::string>(0xF060, "SC_CLOSE"),
-		pair<UINT, std::string>(0x0113, "WM_TIMER"),
-		pair<UINT, std::string>(0x0114, "WM_HSCROLL"),
-		pair<UINT, std::string>(0x0115, "WM_VSCROLL"),
-		pair<UINT, std::string>(0x0117, "WM_INITMENUPOPUP"),
-		pair<UINT, std::string>(0x0119, "WM_GESTURE"),
-		pair<UINT, std::string>(0x0200, "WM_MOUSEFIRST"),
-		pair<UINT, std::string>(0x0200, "WM_MOUSEMOVE"),
-		pair<UINT, std::string>(0x0201, "WM_LBUTTONDOWN"),
-		pair<UINT, std::string>(0x0202, "WM_LBUTTONUP"),
-		pair<UINT, std::string>(0x0203, "WM_LBUTTONDBLCLK"),
-		pair<UINT, std::string>(0x0204, "WM_RBUTTONDOWN"),
-		pair<UINT, std::string>(0x0205, "WM_RBUTTONUP"),
-		pair<UINT, std::string>(0x0206, "WM_RBUTTONDBLCLK"),
-		pair<UINT, std::string>(0x0207, "WM_MBUTTONDOWN"),
-		pair<UINT, std::string>(0x0208, "WM_MBUTTONUP"),
-		pair<UINT, std::string>(0x0209, "WM_MBUTTONDBLCLK"),
-		pair<UINT, std::string>(0x020A, "WM_MOUSEWHEEL"),
-		pair<UINT, std::string>(0x020E, "WM_MOUSEHWHEEL"),
-		pair<UINT, std::string>(0x020A, "WM_MOUSELAST"),
-		pair<UINT, std::string>(0x0215, "WM_CAPTURECHANGED"),
-		pair<UINT, std::string>(0x0233, "WM_DROPFILES"),
-		pair<UINT, std::string>(0x0400, "WM_USER")
-	};
+	// Reverse map of mapWM_toMsg. Will be constructed from mapWM_toMsg in REAPER_PLUGIN_ENTRYPOINT.
+	std::map<UINT, std::string> mapMsgToWM_;
 }

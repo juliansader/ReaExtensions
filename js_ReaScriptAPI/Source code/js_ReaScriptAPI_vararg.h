@@ -11,6 +11,31 @@ static void* __vararg_JS_ReaScriptAPI_Version(void** arglist, int numparms)
 	return NULL;
 }
 
+static void* __vararg_JS_Localize(void** arglist, int numparms)
+{
+	JS_Localize((const char*)arglist[0], (const char*)arglist[1], (char*)arglist[2], (int)(intptr_t)arglist[3]);
+	return NULL;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_Dialog_BrowseForSaveFile(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Dialog_BrowseForSaveFile((const char*)arglist[0], (const char*)arglist[1], (const char*)arglist[2], (const char*)arglist[3], (char*)arglist[4], (int)(intptr_t)arglist[5]);
+}
+
+static void* __vararg_JS_Dialog_BrowseForOpenFiles(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Dialog_BrowseForOpenFiles((const char*)arglist[0], (const char*)arglist[1], (const char*)arglist[2], (const char*)arglist[3], (bool)arglist[4], (char*)arglist[5], (int)(intptr_t)arglist[6]);
+}
+
+static void* __vararg_JS_Dialog_BrowseForFolder(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Dialog_BrowseForFolder((const char*)arglist[0], (const char*)arglist[1], (char*)arglist[2], (int)(intptr_t)arglist[3]);
+}
+
+////////////////////////////////////////////////////////////////////////////
+
 static void* __vararg_JS_Window_GetRect(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_Window_GetRect((void*)arglist[0], (int*)arglist[1], (int*)arglist[2], (int*)arglist[3], (int*)arglist[4]);
@@ -52,6 +77,12 @@ static void* __vararg_JS_Window_GetRelated(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_Window_GetRelated((void*)arglist[0], (const char*)arglist[1]);
 }
+
+static void* __vararg_JS_Window_FindChildByID(void** arglist, int numparms)
+{
+	return (void*)JS_Window_FindChildByID((HWND)arglist[0], (int)(intptr_t)arglist[1]);
+}
+
 
 static void* __vararg_JS_Window_SetFocus(void** arglist, int numparms)
 {
@@ -117,52 +148,44 @@ static void* __vararg_JS_Window_FindChild(void** arglist, int numparms)
 
 static void* __vararg_JS_Window_ArrayAllChild(void** arglist, int numparms)
 {
-	JS_Window_ArrayAllChild((void*)arglist[0], (double*)arglist[1]);
-  return NULL;
+	return (void*)(intptr_t)JS_Window_ArrayAllChild((void*)arglist[0], (double*)arglist[1]);
 }
 
 static void* __vararg_JS_Window_ArrayAllTop(void** arglist, int numparms)
 {
-	JS_Window_ArrayAllTop((double*)arglist[0]);
-  return NULL;
+	return (void*)(intptr_t)JS_Window_ArrayAllTop((double*)arglist[0]);
 }
 
 static void* __vararg_JS_Window_ArrayFind(void** arglist, int numparms)
 {
-	JS_Window_ArrayFind((const char*)arglist[0], (bool)arglist[1], (double*)arglist[2]);
-  return NULL;
+	return (void*)(intptr_t)JS_Window_ArrayFind((const char*)arglist[0], (bool)arglist[1], (double*)arglist[2]);
 }
 
 static void* __vararg_JS_MIDIEditor_ArrayAll(void** arglist, int numparms)
 {
-	JS_MIDIEditor_ArrayAll((double*)arglist[0]);
-  return NULL;
+	return (void*)(intptr_t)JS_MIDIEditor_ArrayAll((double*)arglist[0]);
 }
 
 ///////////////////////////////////////////////
 
 static void* __vararg_JS_Window_ListAllChild(void** arglist, int numparms)
 {
-	JS_Window_ListAllChild((void*)arglist[0], (const char*)arglist[1], (const char*)arglist[2]);
-	return NULL;
+	return (void*)(intptr_t)JS_Window_ListAllChild((void*)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
 }
 
 static void* __vararg_JS_Window_ListAllTop(void** arglist, int numparms)
 {
-	JS_Window_ListAllTop((const char*)arglist[0], (const char*)arglist[1]);
-	return NULL;
+	return (void*)(intptr_t)JS_Window_ListAllTop((char*)arglist[0], (int)(intptr_t)arglist[1]);
 }
 
 static void* __vararg_JS_Window_ListFind(void** arglist, int numparms)
 {
-	JS_Window_ListFind((const char*)arglist[0], (bool)arglist[1], (const char*)arglist[2], (const char*)arglist[3]);
-	return NULL;
+	return (void*)(intptr_t)JS_Window_ListFind((const char*)arglist[0], (bool)arglist[1], (char*)arglist[2], (int)(intptr_t)arglist[3]);
 }
 
 static void* __vararg_JS_MIDIEditor_ListAll(void** arglist, int numparms)
 {
-	JS_MIDIEditor_ListAll((char*)arglist[0], (int)(INT_PTR)arglist[1]);
-	return NULL;
+	return (void*)(intptr_t)JS_MIDIEditor_ListAll((char*)arglist[0], (int)(intptr_t)arglist[1]);
 }
 
 ////////////////////////////////////////////////
@@ -238,6 +261,11 @@ static void* __vararg_JS_Window_AddressFromHandle(void** arglist, int numparms)
 static void* __vararg_JS_WindowMessage_Post(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_WindowMessage_Post((void*)arglist[0], (const char*)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5]);
+}
+
+static void* __vararg_JS_Window_OnCommand(void** arglist, int numparms)
+{
+	return (void*)JS_Window_OnCommand((void*)arglist[0], (int)(intptr_t)arglist[1]);
 }
 
 static void* __vararg_JS_WindowMessage_Send(void** arglist, int numparms)
@@ -687,10 +715,6 @@ static void* __vararg_JS_Window_AttachResizeGrip(void** arglist, int numparms)
 	return NULL;
 }
 
-static void* __vararg_JS_Window_RemoveXPStyle(void** arglist, int numparms)
-{
-	return (void*)(intptr_t)JS_Window_RemoveXPStyle((void*)arglist[0], (bool)arglist[1]);
-}
 
 //////////////////////////////////////////////////////////////
 
@@ -718,6 +742,35 @@ static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
 {
 	return JS_PtrFromStr((const char*)arglist[0]);
 }
+
+//////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_ListView_CountItems(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_ListView_CountItems((HWND)arglist[0]);
+}
+
+static void* __vararg_JS_ListView_GetFocusedItem(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_ListView_GetFocusedItem((HWND)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
+}
+
+static void* __vararg_JS_ListView_EnumSelItems(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_ListView_EnumSelItems((HWND)arglist[0], (int)(intptr_t)arglist[1]);
+}
+
+static void* __vararg_JS_ListView_GetItem(void** arglist, int numparms)
+{
+	JS_ListView_GetItem((HWND)arglist[0], (int)(intptr_t)arglist[1], (char*)arglist[2], (int)(intptr_t)arglist[3], (int*)arglist[4]);
+	return NULL;
+}
+
+static void* __vararg_JS_ListView_ListAllSelItems(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_ListView_ListAllSelItems((HWND)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
+}
+
 
 //////////////////////////////////////////////////////////////////////
 

@@ -4,28 +4,35 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 void  JS_ReaScriptAPI_Version(double* versionOut);
 
+void  JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz);
+
+int   JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz);
+int   JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, char* folderOutNeedBIg, int folderOutNeedBig_sz);
+int   JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, bool allowMultiple, char* fileNamesOutNeedBig, int fileNamesOutNeedBig_sz);
+
 bool  JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut);
 bool  JS_Window_GetClientRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut);
-void  JS_Window_ScreenToClient	(void* windowHWND, int x, int y, int* xOut, int* yOut);
-void  JS_Window_ClientToScreen (void* windowHWND, int x, int y, int* xOut, int* yOut);
+void  JS_Window_ScreenToClient(void* windowHWND, int x, int y, int* xOut, int* yOut);
+void  JS_Window_ClientToScreen(void* windowHWND, int x, int y, int* xOut, int* yOut);
 
-void* JS_Window_FromPoint	(int x, int y);
+void* JS_Window_FromPoint(int x, int y);
 
 void* JS_Window_GetParent(void* windowHWND);
 bool  JS_Window_IsChild(void* parentHWND, void* childHWND);
 void* JS_Window_GetRelated(void* windowHWND, const char* relation);
+HWND  JS_Window_FindChildByID(HWND parent, int ID);  // Functions that receive and return void* are in SWS style. Newer functions use HWND and let vararg wrapper typecast.
 
 HWND  JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title);
 void* JS_Window_Find(const char* title, bool exact);
 void* JS_Window_FindChild(void* parentHWND, const char* title, bool exact);
-void  JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray);
-void  JS_Window_ArrayAllTop(double* reaperarray);
-void  JS_Window_ArrayFind(const char* title, bool exact, double* reaperarray);
-void  JS_MIDIEditor_ArrayAll(double* reaperarray);
-void  JS_Window_ListAllChild(void* parentHWND, const char* section, const char* key);
-void  JS_Window_ListAllTop(const char* section, const char* key);
-void  JS_Window_ListFind(const char* title, bool exact, const char* section, const char* key);
-void  JS_MIDIEditor_ListAll(char* buf, int buf_sz);
+int   JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray);
+int   JS_Window_ArrayAllTop(double* reaperarray);
+int   JS_Window_ArrayFind(const char* title, bool exact, double* reaperarray);
+int   JS_MIDIEditor_ArrayAll(double* reaperarray);
+int   JS_Window_ListAllChild(void* parentHWND, char* listOutNeedBig, int listOutNeedBig_sz);
+int   JS_Window_ListAllTop(char* listOutNeedBig, int listOutNeedBig_sz);
+int   JS_Window_ListFind(const char* title, bool exact, char* listOutNeedBig, int listOutNeedBig_sz);
+int   JS_MIDIEditor_ListAll(char* listOutNeedBig, int listOutNeedBig_sz);
 
 void  JS_Window_Move(void* windowHWND, int left, int top);
 void  JS_Window_Resize(void* windowHWND, int width, int height);
@@ -46,9 +53,9 @@ void  JS_Window_Show(void* windowHWND, const char* state);
 bool  JS_Window_IsVisible(void* windowHWND);
 
 bool  JS_Window_SetTitle(void* windowHWND, const char* title);
-void  JS_Window_GetTitle(void* windowHWND, char* buf, int buf_sz);
+void  JS_Window_GetTitle(void* windowHWND, char* titleOut, int titleOut_sz);
 
-void  JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz);
+void  JS_Window_GetClassName(HWND windowHWND, char* classOut, int classOut_sz);
 
 void* JS_Window_HandleFromAddress(double address);
 void  JS_Window_AddressFromHandle(void* handle, double* addressOut);
@@ -57,13 +64,14 @@ bool  JS_Window_IsWindow(void* windowHWND);
 int   JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passThrough);
 int   JS_WindowMessage_InterceptList(void* windowHWND, const char* messages);
 int   JS_WindowMessage_PassThrough(void* windowHWND, const char* message, bool passThrough);
-bool  JS_WindowMessage_ListIntercepts(void* windowHWND, char* buf, int buf_sz);
+bool  JS_WindowMessage_ListIntercepts(void* windowHWND, char* listOutNeedBig, int listOutNeedBig_sz);
 bool  JS_WindowMessage_Post(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh);
 int   JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh);
 bool  JS_WindowMessage_Peek(void* windowHWND, const char* message, bool* passedThroughOut, double* timeOut, int* wParamLowOut, int* wParamHighOut, int* lParamLowOut, int* lParamHighOut);
 int   JS_WindowMessage_Release(void* windowHWND, const char* messages);
 void  JS_WindowMessage_ReleaseWindow(void* windowHWND);
 void  JS_WindowMessage_ReleaseAll();
+bool  JS_Window_OnCommand(void* windowHWND, int commandID);
 
 int   JS_Mouse_GetState(int flags);
 bool  JS_Mouse_SetPosition(int x, int y);
@@ -145,12 +153,17 @@ void  JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, cons
 
 void  JS_Window_AttachTopmostPin(void* windowHWND);
 void  JS_Window_AttachResizeGrip(void* windowHWND);
-bool  JS_Window_RemoveXPStyle(void* windowHWND, bool remove);
 
-void* JS_PtrFromStr(const char* s);
+void* JS_PtrFromStr(const char* str);
 void  JS_Int(void* address, int offset, int* intOut);
 void  JS_Byte(void* address, int offset, int* byteOut);
 void  JS_Double(void* address, int offset, double* doubleOut);
+
+int   JS_ListView_CountItems(HWND listviewHWND);
+int   JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz);
+int   JS_ListView_EnumSelItems(HWND listviewHWND, int index);
+void  JS_ListView_GetItem(HWND listviewHWND, int index, char* textOut, int textOut_sz, int* stateOut);
+int   JS_ListView_ListAllSelItems(HWND listviewHWND, char* itemsOutNeedBig, int itemsOutNeedBig_sz);
 
 class AudioWriter;
 
