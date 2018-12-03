@@ -85,7 +85,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.96;
+	*versionOut = 0.961;
 }
 
 
@@ -226,7 +226,7 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 				}
 			}
 			if (fileLen < LONGLEN) {
-				if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, fileLen)) {
+				if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, (int)fileLen)) {
 					if (fileNamesOutNeedBig && fileNamesOutNeedBig_sz == fileLen) {
 						memcpy(fileNamesOutNeedBig, fileNames, fileLen);
 						retval = TRUE;
@@ -2070,91 +2070,38 @@ void JS_Double(void* address, int offset, double* doubleOut)
 //////////////////////////////////////////////////////////////
 // Listview functions
 
-int JS_ListView_CountItems(HWND listviewHWND)
+int JS_ListView_GetItemCount(HWND listviewHWND)
 {
 	return ListView_GetItemCount(listviewHWND);
 }
 
+int JS_ListView_GetSelectedCount(HWND listviewHWND)
+{
+	return ListView_GetSelectedCount(listviewHWND);
+}
+
 int JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz)
 {
-	textOut[0] = '\0';
 	int index = ListView_GetNextItem(listviewHWND, -1, LVNI_FOCUSED);
 	if (index != -1) {
-		LVITEM info
-		{
-			LVIF_TEXT | LVIF_STATE,	//UINT mask;
-			index,		//int iItem;
-			0,		//int iSubItem;
-			0,		//UINT state;
-			LVIS_SELECTED|LVIS_FOCUSED,	//UINT stateMask;
-			textOut,	//LPSTR pszText;
-			textOut_sz,	//int cchTextMax;
-			0,		//int iImage;
-			0		//LPARAM lParam;
-		};
-		ListView_GetItem(listviewHWND, &info);
-	}
+		ListView_GetItemText(listviewHWND, index, 0, textOut, textOut_sz); }
+	else
+		textOut[0] = '\0';
 	return index;
 }
 
 int JS_ListView_EnumSelItems(HWND listviewHWND, int index)
 {
 	// WDL/swell doesn't offer all these flag options, so this function only offers SELECTED:
-	/*
-	int intFlags = 0; // = LVNI_ALL;
-
-	if		(strstr(flags, "ABOVE")) intFlags |= LVNI_ABOVE;
-	else if (strstr(flags, "BELOW")) intFlags |= LVNI_BELOW;
-	else if (strstr(flags, "LEFT"))  intFlags |= LVNI_TOLEFT;
-	else if (strstr(flags, "RIGHT")) intFlags |= LVNI_TORIGHT;
-
-	if (strstr(flags, "CUT")) intFlags |= LVNI_CUT;
-	if (strstr(flags, "SELECTED")) intFlags |= LVNI_SELECTED;
-	if (strstr(flags, "DROPHILITED")) intFlags |= LVNI_DROPHILITED;
-	if (strstr(flags, "FOCUSED")) intFlags |= LVNI_FOCUSED;
-
-	if (strstr(flags, "VISIBLEORDER")) intFlags |= LVNI_VISIBLEORDER;
-	else if (strstr(flags, "VISIBLEONLY")) intFlags |= LVNI_VISIBLEONLY;
-	else if (strstr(flags, "SAMEGROUPONLY")) intFlags |= LVNI_SAMEGROUPONLY;
-	*/
 	return ListView_GetNextItem(listviewHWND, index, LVNI_SELECTED);
 }
 
-void JS_ListView_GetItem(HWND listviewHWND, int index, char* textOut, int textOut_sz, int* stateOut)
+void JS_ListView_GetItem(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz, int* stateOut)
 {
-	textOut[0] = '\0';
-	LVITEM info
-	{
-		LVIF_TEXT | LVIF_STATE,	//UINT mask;
-		index,		//int iItem;
-		0,		//int iSubItem;
-		0,		//UINT state;
-		LVIS_SELECTED|LVIS_FOCUSED,	//UINT stateMask;
-		textOut,	//LPSTR pszText;
-		textOut_sz,	//int cchTextMax;
-		0,		//int iImage;
-		0		//LPARAM lParam;
-
-					// swell doesn't use the following entries, and also not relevant to this function:
-					/*
-					0,			//int iIndent;
-					#if (NTDDI_VERSION >= NTDDI_WINXP)
-					0,			//int iGroupId;
-					0,			//UINT cColumns; // tile view columns
-					0,			//PUINT puColumns;
-					#endif
-					#if (NTDDI_VERSION >= NTDDI_VISTA) // Will be unused downlevel, but sizeof(LVITEMA) must be equal to sizeof(LVITEMW)
-					0,			//int* piColFmt;
-					0			//int iGroup; // readonly. only valid for owner data.
-					#endif
-					*/
-	};
-
-	ListView_GetItem(listviewHWND, &info);
-	*stateOut = info.state;
-
+	ListView_GetItemText(listviewHWND, index, subItem, textOut, textOut_sz);
+	*stateOut = ListView_GetItemState(listviewHWND, index, LVIS_SELECTED | LVIS_FOCUSED);
 	// WIN32 and swell define LVIS_SELECTED and LVIS_FOCUSED differently, so if swell, swap values:
-#ifndef _WIN32
+	#ifndef _WIN32
 	if (((*stateOut) & LVIS_SELECTED) && !((*stateOut) & LVIS_FOCUSED))
 	{
 		*stateOut |= LVIS_FOCUSED;
@@ -2165,7 +2112,31 @@ void JS_ListView_GetItem(HWND listviewHWND, int index, char* textOut, int textOu
 		*stateOut &= !LVIS_FOCUSED;
 		*stateOut |= LVIS_SELECTED;
 	}
-#endif
+	#endif
+}
+
+int JS_ListView_GetItemState(HWND listviewHWND, int index)
+{
+	int state = ListView_GetItemState(listviewHWND, index, LVIS_SELECTED | LVIS_FOCUSED);
+	// WIN32 and swell define LVIS_SELECTED and LVIS_FOCUSED differently, so if swell, swap values:
+	#ifndef _WIN32
+	if ((state & LVIS_SELECTED) && !(state & LVIS_FOCUSED))
+	{
+		state |= LVIS_FOCUSED;
+		state &= !LVIS_SELECTED;
+	}
+	else if ((state & LVIS_FOCUSED) && !(state & LVIS_SELECTED))
+	{
+		state &= !LVIS_FOCUSED;
+		state |= LVIS_SELECTED;
+	}
+	#endif
+	return state;
+}
+
+void JS_ListView_GetItemText(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz)
+{
+	ListView_GetItemText(listviewHWND, index, subItem, textOut, textOut_sz);
 }
 
 int JS_ListView_ListAllSelItems(HWND listviewHWND, char* itemsOutNeedBig, int itemsOutNeedBig_sz)

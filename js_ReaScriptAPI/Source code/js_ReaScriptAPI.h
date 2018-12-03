@@ -159,10 +159,13 @@ void  JS_Int(void* address, int offset, int* intOut);
 void  JS_Byte(void* address, int offset, int* byteOut);
 void  JS_Double(void* address, int offset, double* doubleOut);
 
-int   JS_ListView_CountItems(HWND listviewHWND);
+int   JS_ListView_GetItemCount(HWND listviewHWND);
+int   JS_ListView_GetSelectedCount(HWND listviewHWND);
 int   JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz);
 int   JS_ListView_EnumSelItems(HWND listviewHWND, int index);
-void  JS_ListView_GetItem(HWND listviewHWND, int index, char* textOut, int textOut_sz, int* stateOut);
+void  JS_ListView_GetItem(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz, int* stateOut);
+int   JS_ListView_GetItemState(HWND listviewHWND, int index);
+void  JS_ListView_GetItemText(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz);
 int   JS_ListView_ListAllSelItems(HWND listviewHWND, char* itemsOutNeedBig, int itemsOutNeedBig_sz);
 
 class AudioWriter;

@@ -241,10 +241,13 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Byte), "void", "void*,int,int*", "address,offset,byteOut", "Returns the unsigned byte at address[offset]. Offset is added as steps of 1 byte each.", },
 	{ APIFUNC(JS_Double), "void", "void*,int,double*", "address,offset,doubleOut", "Returns the 8-byte floating point value at address[offset]. Offset is added as steps of 8 bytes each.", },
 	
-	{ APIFUNC(JS_ListView_CountItems), "int", "void*", "listviewHWND", "", },
+	{ APIFUNC(JS_ListView_GetItemCount), "int", "void*", "listviewHWND", "", },
+	{ APIFUNC(JS_ListView_GetSelectedCount), "int", "void*", "listviewHWND", "", },
 	{ APIFUNC(JS_ListView_GetFocusedItem), "int", "void*,char*,int", "listviewHWND,textOut,textOut_sz", "Returns the index and text of the focused item, if any.", },
 	{ APIFUNC(JS_ListView_EnumSelItems), "int", "void*,int", "listviewHWND,index", "Returns the index of the next selected list item with index greater that the specified number. Returns -1 if no selected items left.", },
-	{ APIFUNC(JS_ListView_GetItem), "void", "void*,int,char*,int,int*", "listviewHWND,index,textOut,textOut_sz,stateOut", "Returns the text and state of specified item. ", },
+	{ APIFUNC(JS_ListView_GetItem), "void", "void*,int,int,char*,int,int*", "listviewHWND,index,subItem,textOut,textOut_sz,stateOut", "Returns the text and state of specified item.", },
+	{ APIFUNC(JS_ListView_GetItemText), "void", "void*,int,int,char*,int", "listviewHWND,index,subItem,textOut,textOut_sz", "", },
+	{ APIFUNC(JS_ListView_GetItemState), "int", "void*,int", "listviewHWND,index", "", },
 	{ APIFUNC(JS_ListView_ListAllSelItems), "int", "void*,char*,int", "listviewHWND,itemsOutNeedBig,itemsOutNeedBig_sz", "Returns the indices of all selected items as a comma-separated list.\n\n * retval: Number of selected items found; negative or zero if an error occured.", },
 
 	{ APIFUNC(Xen_AudioWriter_Create), "AudioWriter*", "const char*,int,int", "filename,numchans,samplerate", "Creates writer for 32 bit floating point WAV", },

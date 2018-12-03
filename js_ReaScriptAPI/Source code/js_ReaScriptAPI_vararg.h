@@ -745,9 +745,14 @@ static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
 
 //////////////////////////////////////////////////////////////////////
 
-static void* __vararg_JS_ListView_CountItems(void** arglist, int numparms)
+static void* __vararg_JS_ListView_GetItemCount(void** arglist, int numparms)
 {
-	return (void*)(intptr_t)JS_ListView_CountItems((HWND)arglist[0]);
+	return (void*)(intptr_t)JS_ListView_GetItemCount((HWND)arglist[0]);
+}
+
+static void* __vararg_JS_ListView_GetSelectedCount(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_ListView_GetSelectedCount((HWND)arglist[0]);
 }
 
 static void* __vararg_JS_ListView_GetFocusedItem(void** arglist, int numparms)
@@ -762,8 +767,19 @@ static void* __vararg_JS_ListView_EnumSelItems(void** arglist, int numparms)
 
 static void* __vararg_JS_ListView_GetItem(void** arglist, int numparms)
 {
-	JS_ListView_GetItem((HWND)arglist[0], (int)(intptr_t)arglist[1], (char*)arglist[2], (int)(intptr_t)arglist[3], (int*)arglist[4]);
+	JS_ListView_GetItem((HWND)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (char*)arglist[3], (int)(intptr_t)arglist[4], (int*)arglist[5]);
 	return NULL;
+}
+
+static void* __vararg_JS_ListView_GetItemText(void** arglist, int numparms)
+{
+	JS_ListView_GetItemText((HWND)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (char*)arglist[3], (int)(intptr_t)arglist[4]);
+	return NULL;
+}
+
+static void* __vararg_JS_ListView_GetItemState(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_ListView_GetItemState((HWND)arglist[0], (int)(intptr_t)arglist[1]);
 }
 
 static void* __vararg_JS_ListView_ListAllSelItems(void** arglist, int numparms)
