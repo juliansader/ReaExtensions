@@ -14,7 +14,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		{
 			// This is the WIN32 / swell MessageBox, not REAPER's API MB.  This should create a separate window that is listed in the taskbar,
 			//		and more easily visible behind REAPER's splash screen.
-			MessageBox(NULL, "Unable to import default API functions.\n\nNOTE:\nThis extension requires REAPER v5.97 or later.", "ERROR: js_ReaScriptAPI extension", 0);  //fprintf(stderr, "Unable to import API functions.\n");
+			MessageBox(NULL, "Unable to import default API functions.\n\nNOTE:\nThis extension requires REAPER v5.965 or later.", "ERROR: js_ReaScriptAPI extension", 0);  //fprintf(stderr, "Unable to import API functions.\n");
 			return 0;
 		}
 		//		Load each of the undocumented functions.
@@ -42,8 +42,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		// Don't know what this does, but apparently it's necessary for the localization functions.
 		IMPORT_LOCALIZE_RPLUG(rec);
 
-		// Functions imported, continue initing plugin...
-		// Second, export this extension's functions to ReaScript API.
+		// Functions imported, continue initing plugin by exporting this extension's functions to ReaScript API.
 
 		// Each function's defstring will temporarily be contructed in temp[]
 		char temp[10000];
@@ -85,7 +84,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.961;
+	*versionOut = 0.962;
 }
 
 
