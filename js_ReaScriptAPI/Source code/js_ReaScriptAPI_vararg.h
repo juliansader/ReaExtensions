@@ -332,7 +332,7 @@ static void* __vararg_JS_Mouse_LoadCursor(void** arglist, int numparms)
 
 static void* __vararg_JS_Mouse_LoadCursorFromFile(void** arglist, int numparms)
 {
-  return (void*)(intptr_t)JS_Mouse_LoadCursorFromFile((const char*)arglist[0]);
+  return (void*)(intptr_t)JS_Mouse_LoadCursorFromFile((const char*)arglist[0], numparms > 1 ? (bool*)arglist[1] : NULL);
 }
 
 static void* __vararg_JS_Mouse_SetCursor(void** arglist, int numparms)
@@ -705,8 +705,7 @@ static void* __vararg_JS_LICE_PutPixel(void** arglist, int numparms)
 
 static void* __vararg_JS_Window_AttachTopmostPin(void** arglist, int numparms)
 {
-	JS_Window_AttachTopmostPin((void*)arglist[0]);
-	return NULL;
+	return JS_Window_AttachTopmostPin((HWND)arglist[0]);
 }
 
 static void* __vararg_JS_Window_AttachResizeGrip(void** arglist, int numparms)

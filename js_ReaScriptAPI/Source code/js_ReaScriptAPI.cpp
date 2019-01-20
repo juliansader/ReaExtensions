@@ -81,10 +81,13 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		return 0;
 }
 
-
+// v0.963:
+// * Fix bug in Find functions in macOS.
+// * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
+// * Window_FindEx function.
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.962;
+	*versionOut = 0.963;
 }
 
 
@@ -594,9 +597,10 @@ BOOL CALLBACK JS_Window_Find_Callback_Child(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
 	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
-	int len = GetWindowText(hwnd, s.temp, s.tempLen);
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
 	s.temp[s.tempLen - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-	for (int i = 0; (s.temp[i] != '\0') && (i < len); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
 	if (     (s.exact  && (strcmp(s.temp, s.target) == 0)    )
 		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
 	{
@@ -611,9 +615,10 @@ BOOL CALLBACK JS_Window_Find_Callback_Top(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
 	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
-	int len = GetWindowText(hwnd, s.temp, s.tempLen);
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length
 	s.temp[s.tempLen-1] = '\0'; // Make sure that loooong titles are properly terminated.
-	for (int i = 0; (s.temp[i] != '\0') && (i < len); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
 	if (     (s.exact  && (strcmp(s.temp, s.target) == 0)    )
 		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
 	{
@@ -661,8 +666,9 @@ BOOL CALLBACK JS_Window_FindChild_Callback(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
 	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
-	int len = GetWindowText(hwnd, s.temp, s.tempLen);
-	for (int i = 0; (s.temp[i] != '\0') && (i < len); i++) s.temp[i] = (char)tolower(s.temp[i]); // Convert to lowercase
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // Convert to lowercase
 	if (     (s.exact  && (strcmp(s.temp, s.target) == 0))
 		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
 	{
@@ -710,11 +716,12 @@ BOOL CALLBACK JS_Window_ListFind_Callback_Child(HWND hwnd, LPARAM structPtr)
 	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
 	set<HWND>& foundHWNDs = *(s.foundHWNDs);
 
-	int len = GetWindowText(hwnd, s.temp, s.tempLen);
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
 	// Make sure that loooong titles are properly terminated.
 	s.temp[s.tempLen - 1] = '\0';
 	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
-	for (int i = 0; (s.temp[i] != '\0') && (i < len); i++) s.temp[i] = (char)tolower(s.temp[i]);
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]);
 	// If exact, match entire title, otherwise substring
 	if ((	  s.exact  && (strcmp(s.temp, s.target) == 0))
 		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
@@ -729,11 +736,12 @@ BOOL CALLBACK JS_Window_ListFind_Callback_Top(HWND hwnd, LPARAM structPtr)
 	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
 	set<HWND>& foundHWNDs = *(s.foundHWNDs);
 
-	int len = GetWindowText(hwnd, s.temp, s.tempLen);
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
 	// Make sure that loooong titles are properly terminated.
 	s.temp[s.tempLen - 1] = '\0'; 
 	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
-	for (int i = 0; (s.temp[i] != '\0') && (i < len); i++) s.temp[i] = (char)tolower(s.temp[i]);
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]);
 	// If exact, match entire title, otherwise substring
 	if (	 (s.exact  && (strcmp(s.temp, s.target) == 0))
 		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
@@ -1528,13 +1536,13 @@ void JS_WindowMessage_ReleaseAll()
 int JS_Mouse_GetState(int flags)
 {
 	int state = 0;
-	if ((flags & 1)  && (GetAsyncKeyState(VK_LBUTTON) >> 1))	state |= 1;
-	if ((flags & 2)  && (GetAsyncKeyState(VK_RBUTTON) >> 1))	state |= 2;
-	if ((flags & 64) && (GetAsyncKeyState(VK_MBUTTON) >> 1))	state |= 64;
-	if ((flags & 4)  && (GetAsyncKeyState(VK_CONTROL) >> 1))	state |= 4;
-	if ((flags & 8)  && (GetAsyncKeyState(VK_SHIFT) >> 1))		state |= 8;
-	if ((flags & 16) && (GetAsyncKeyState(VK_MENU) >> 1))		state |= 16;
-	if ((flags & 32) && (GetAsyncKeyState(VK_LWIN) >> 1))		state |= 32;
+	if (flags & 1)	 if (GetAsyncKeyState(VK_LBUTTON) >> 1)	state |= 1; 
+	if (flags & 2)	 if (GetAsyncKeyState(VK_RBUTTON) >> 1)	state |= 2;
+	if (flags & 64)  if (GetAsyncKeyState(VK_MBUTTON) >> 1)	state |= 64;
+	if (flags & 4)	 if (GetAsyncKeyState(VK_CONTROL) >> 1)	state |= 4;
+	if (flags & 8)	 if (GetAsyncKeyState(VK_SHIFT) >> 1)	state |= 8;
+	if (flags & 16)  if (GetAsyncKeyState(VK_MENU) >> 1)	state |= 16;
+	if (flags & 32)  if (GetAsyncKeyState(VK_LWIN) >> 1)	state |= 32;
 	return state;
 }
 
@@ -1559,13 +1567,26 @@ void* JS_Mouse_LoadCursor(int cursorNumber)
 #endif
 }
 
-void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName)
+void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName, bool* forceNewLoadOptional)
 {
+	using namespace Julian;
+	string  file	= pathAndFileName;
+	HCURSOR cursor	= NULL;
+	if ((forceNewLoadOptional && *forceNewLoadOptional)
+		|| !(mapFileToMouseCursor.count(file)))
+	{
 #ifdef _WIN32
-	return LoadCursorFromFile(pathAndFileName);
+		cursor = LoadCursorFromFile(pathAndFileName);
 #else
-	return SWELL_LoadCursorFromFile(pathAndFileName);
+		cursor = SWELL_LoadCursorFromFile(pathAndFileName);
 #endif
+		if (cursor)
+			mapFileToMouseCursor[file] = cursor;
+	}
+	else
+		cursor = mapFileToMouseCursor[file];
+
+	return cursor;
 }
 
 void JS_Mouse_SetCursor(void* cursorHandle)
@@ -2031,10 +2052,31 @@ void JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const
 ///////////////////////////////////////////////////////////
 // Undocumented functions
 
-void JS_Window_AttachTopmostPin(void* windowHWND)
+BOOL CALLBACK JS_Window_AttachTopmost_Callback_Remove(HWND hwnd, LPARAM lparam)
 {
+	std::set<HWND>& s = *(reinterpret_cast<std::set<HWND>*>(lparam));
+	s.erase(hwnd);
+	return TRUE;
+}
+
+BOOL CALLBACK JS_Window_AttachTopmost_Callback_Get(HWND hwnd, LPARAM lparam)
+{
+	std::set<HWND>& s = *(reinterpret_cast<std::set<HWND>*>(lparam));
+	s.insert(hwnd);
+	return TRUE;
+}
+
+HWND JS_Window_AttachTopmostPin(HWND windowHWND)
+{
+	std::set<HWND> childWindows;
+	EnumChildWindows(windowHWND, JS_Window_AttachTopmost_Callback_Get, reinterpret_cast<LPARAM>(&childWindows));
 	AttachWindowTopmostButton((HWND)windowHWND);
 	SetWindowPos((HWND)windowHWND, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER); // Force re-draw frame, otherwise pin only becomes visible when window is moved.
+	EnumChildWindows(windowHWND, JS_Window_AttachTopmost_Callback_Remove, reinterpret_cast<LPARAM>(&childWindows));
+	if (childWindows.size() == 1)
+		return *childWindows.begin();
+	else
+		return nullptr;
 }
 
 void JS_Window_AttachResizeGrip(void* windowHWND)

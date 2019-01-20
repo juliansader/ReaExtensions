@@ -76,7 +76,7 @@ bool  JS_Window_OnCommand(void* windowHWND, int commandID);
 int   JS_Mouse_GetState(int flags);
 bool  JS_Mouse_SetPosition(int x, int y);
 void* JS_Mouse_LoadCursor(int cursorNumber);
-void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName);
+void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName, bool* forceNewLoadOptional);
 void  JS_Mouse_SetCursor(void* cursorHandle);
 
 bool  JS_Window_GetScrollInfo(void* windowHWND, const char* scrollbar, int* positionOut, int* pageSizeOut, int* minOut, int* maxOut, int* trackPosOut);
@@ -151,7 +151,7 @@ void  JS_LICE_RoundRect(void* bitmap, double x, double y, double w, double h, in
 int   JS_LICE_GetPixel(void* bitmap, int x, int y);
 void  JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const char* mode);
 
-void  JS_Window_AttachTopmostPin(void* windowHWND);
+HWND  JS_Window_AttachTopmostPin(HWND windowHWND);
 void  JS_Window_AttachResizeGrip(void* windowHWND);
 
 void* JS_PtrFromStr(const char* str);
