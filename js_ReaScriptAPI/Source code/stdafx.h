@@ -10,6 +10,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <array>
 #include <utility>
 #include <cstdint>
 
@@ -29,9 +30,15 @@
 // So probably only necessary to #include reaper_plugins_functions.h
 #include "reaper_plugin_functions.h" 
 
+#define LOCALIZE_IMPORT_PREFIX "js_"
+#include "localize-import.h"
+#include "localize.h"
+
 #ifdef _WIN32
 	// #include windows.h is not necessary
 	#include <windowsx.h>
+	#include <Shlobj.h>
+	//#include <Shlobj_core.h>
 	#define WINAPI __stdcall
 #elif __linux__
 	#include <gtk/gtk.h>
@@ -47,7 +54,7 @@ int (WINAPI *CoolSB_SetScrollInfo)(HWND hwnd, int nBar, LPSCROLLINFO lpsi, BOOL 
 int (WINAPI *CoolSB_SetScrollPos)(HWND hwnd, int nBar, int nPos, BOOL fRedraw);
 void(*AttachWindowTopmostButton)(HWND hwnd);
 void(*AttachWindowResizeGrip)(HWND hwnd);
-BOOL(WINAPI *RemoveXPStyle)(HWND hwnd, int rm);
+//BOOL(WINAPI *RemoveXPStyle)(HWND hwnd, int rm); // What does this function do?  Doesn't seem to work.
 
 #include "js_ReaScriptAPI_namespace.h"
 #include "js_ReaScriptAPI.h"
