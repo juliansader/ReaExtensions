@@ -113,7 +113,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Window_Destroy), "void", "void*", "windowHWND", "Destroys the specified window.", },
 	{ APIFUNC(JS_Window_Show), "void", "void*,const char*", "windowHWND,state", "Sets the specified window's show state.\n\nParameters:\n * state: Either \"SHOW\", \"SHOWNA\", \"SHOWMINIMIZED\",  or \"HIDE\".", },
 	{ APIFUNC(JS_Window_IsVisible), "bool", "void*", "windowHWND", "Determines the visibility state of the window.", },
-	{ APIFUNC(JS_Window_IsWindow), "bool", "void*", "windowHWND", "Determines whether the specified window handle identifies an existing window.", },
+	{ APIFUNC(JS_Window_IsWindow), "bool", "void*", "windowHWND", "Determines whether the specified window handle identifies an existing window.\n\nOn macOS and Linux, only windows that belong to REAPER will be identified (and only such windows should be acted on by scripts).\n\nWARNING! On MacOS and Linux, REAPER WILL CRASH if the handle passed to a JS_Window or JS_WindowMessage function does not refer to an existing window.\n\nThe IsWindow function is slower on macOS and Linux. Preferably use native functions such as MIDIEditor_GetMode to test handles.", },
 
 	{ APIFUNC(JS_Window_FindEx), "void*", "void*,void*,const char*,const char*", "parentHWND,childHWND,className,title", "Returns a handle to a child window whose class and title match the specified strings.\n\nParameters: * childWindow: The function searches child windows, beginning with the window *after* the specified child window. If childHWND is equal to parentHWND, the search begins with the first child window of parentHWND.\n * title: An empty string, \"\", will match all windows. (Search is not case sensitive.)", },
 	{ APIFUNC(JS_Window_Find), "void*", "const char*,bool", "title,exact", "Returns a HWND to the top-level window whose title matches the specified string. This function does not search child window, and is not case sensitive.\n\nParameters:\n * exact: Match entire title exactly, or match substring of title.", },
@@ -133,12 +133,12 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(JS_Window_SetPosition), "void", "void*,int,int,int,int", "windowHWND,left,top,width,height", "Sets the window position and size.", },
 	{ APIFUNC(JS_Window_SetZOrder), "void", "void*,const char*,void*", "windowHWND,ZOrder,insertAfterHWND", "Sets the window Z order.\n\nParameters:\n * ZOrder: \"INSERT_AFTER\", \"BOTTOM\", \"TOPMOST\", \"NOTOPMOST\" or \"TOP\" ).\n * InsertAfterHWND: If ZOrder is INSERT_AFTER, insertAfterHWND must be a handle to the window to precede windowHWND in the Z order; otherwise, insertAfterHWND is ignored.", },
 	{ APIFUNC(JS_Window_GetLongPtr), "void*", "void*,const char*", "windowHWND,info", "Returns information about the specified window.\n\ninfo: \"USERDATA\", \"WNDPROC\", \"DLGPROC\", \"ID\", \"EXSTYLE\" or \"STYLE\".\n\nFor documentation about the types of information returned, refer to the Win32 function GetWindowLongPtr."},
-	{ APIFUNC(JS_Window_SetOpacity), "bool", "void*,const char*,double", "windowHWND,mode,value", "Sets the window opacity.\n\nParameters:\nmode: either \"ALPHA\" or \"COLOR\". \nvalue: If ALPHA, the specified value may range from zero to one, and will apply to the entire window. \nIf COLOR, value specifies a 0xRRGGBB color, and all pixels in this color will be made transparent. (All mouse clicks over transparent pixels will pass through, too).\n\nWARNING: COLOR mode is only available in Windows, not Linux or MacOS.", },
+	{ APIFUNC(JS_Window_SetOpacity), "bool", "void*,const char*,double", "windowHWND,mode,value", "Sets the window opacity.\n\nParameters:\nmode: either \"ALPHA\" or \"COLOR\". \nvalue: If ALPHA, the specified value may range from zero to one, and will apply to the entire window. \nIf COLOR, value specifies a 0xRRGGBB color, and all pixels in this color will be made transparent. (All mouse clicks over transparent pixels will pass through, too).\n\nWARNING: COLOR mode is only available in Windows, not Linux or macOS.", },
 
 	{ APIFUNC(JS_Window_GetTitle), "void", "void*,char*,int", "windowHWND,titleOut,titleOut_sz", "Returns the title (if any) of the specified window.", },
 	{ APIFUNC(JS_Window_SetTitle), "bool", "void*,const char*", "windowHWND,title", "Changes the title of the specified window. Returns true if successful.", },
 
-	{ APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,classOut,classOut_sz", "WARNING: May not be fully implemented on MacOS and Linux.", },
+	{ APIFUNC(JS_Window_GetClassName), "void", "void*,char*,int", "windowHWND,classOut,classOut_sz", "WARNING: May not be fully implemented on macOS and Linux.", },
 
 	{ APIFUNC(JS_Window_HandleFromAddress), "void*", "double", "address", "Converts an address to a handle (such as a HWND) that can be utilized by REAPER and other API functions.", },
 	{ APIFUNC(JS_Window_AddressFromHandle), "void", "void*,double*", "handle,addressOut", "", },
@@ -167,7 +167,7 @@ APIdef aAPIdefs[] =
 
 	{ APIFUNC(JS_GDI_GetClientDC), "void*", "void*", "windowHWND", "Returns the device context for the client area of the specified window.", },
 	{ APIFUNC(JS_GDI_GetWindowDC), "void*", "void*", "windowHWND", "Returns the device context for the entire window, including title bar and frame.", },
-	{ APIFUNC(JS_GDI_GetScreenDC), "void*", "", "", "Returns a device context for the entire screen.\n\nWARNING: Only available on Windows, not Linux or MacOS.", },
+	{ APIFUNC(JS_GDI_GetScreenDC), "void*", "", "", "Returns a device context for the entire screen.\n\nWARNING: Only available on Windows, not Linux or macOS.", },
 	{ APIFUNC(JS_GDI_ReleaseDC), "void", "void*,void*", "windowHWND,deviceHDC", "", },
 
 	{ APIFUNC(JS_GDI_CreateFillBrush), "void*", "int", "color", "", },

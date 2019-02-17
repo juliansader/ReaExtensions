@@ -52,19 +52,14 @@ namespace Julian
 		set<HWND>*	foundHWNDs;  // HWND that was found (for single-window versions of functions)
 		//double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
 	};
-	/*
-	struct sEnumWindows
+
+	// Struct for IsWindow function.
+	struct sIsWindow
 	{
-		const char* target; // Title text that must be matched
-		bool		exact;  // Match exactly, or substring?
-		char*		temp;   // Temprarily store window titles returned by GetWindowText
-		unsigned int	tempLen;
-		HWND		hwnd;  // HWND that was found (for single-window versions of functions)
-		char*		hwndString; // List of all matching HWNDs (for List version of functions)
-		unsigned int	hwndLen;
-		double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
+		HWND main; // REAPER's main window
+		HWND target; // Window for which status must be checked
+		bool found;
 	};
-	*/
 
 	// Error codes for WindowMessage_Intercept
 	constexpr int ERR_ALREADY_INTERCEPTED = 0;

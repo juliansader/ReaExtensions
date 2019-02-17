@@ -85,9 +85,11 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 // * Fix bug in Find functions in macOS.
 // * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
 // * Window_FindEx function.
+// v0.964:
+// * Implement IsWindow for Linux and MacOS.
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.963;
+	*versionOut = 0.964;
 }
 
 
@@ -866,7 +868,7 @@ int JS_Window_ArrayAllTop(double* reaperarray)
 {
 	// Enumerate through all top-level windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
 	set<HWND> foundHWNDs;
-	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));;
+	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
 
 	return ConvertSetHWNDToArray(foundHWNDs, reaperarray);
 }
@@ -977,7 +979,7 @@ bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 	// Opacity can only be applied to top-level framed windows, AFAIK, and in Linux, REAPER crashes if opacity is applied to a child window.
 	// So must check that style is WS_THICKFRAME.
 	bool OK = false;
-	if (IsWindow(windowHWND))
+	if (JS_Window_IsWindow(windowHWND))
 	{
 #ifdef _WIN32
 		if (GetWindowLongPtr(windowHWND, GWL_STYLE) & WS_THICKFRAME)
@@ -1047,11 +1049,60 @@ void JS_Window_AddressFromHandle(void* handle, double* addressOut)
 	*addressOut = (double)(intptr_t)handle;
 }
 
-bool  JS_Window_IsWindow(void* windowHWND)
+//---------------------------------------------------------------------------------
+// WDL/swell has not implemented IsWindow in Linux., and IsWindow is slow in MacOS.
+// If scripts or extensions try to access a HWND that doesn't exist any more,
+//		REAPER may crash completely.
+// This implementation only searches child windows of REAPER's own window, to save time.
+//		Scripts are in any case only supposed to access REAPER's windows.
+
+BOOL CALLBACK JS_Window_IsWindow_Callback_Child(HWND hwnd, LPARAM structPtr)
 {
-	return !!IsWindow((HWND)windowHWND);
+	using namespace Julian;
+	sIsWindow& s = *(reinterpret_cast<sIsWindow*>(structPtr));
+	if (hwnd == s.target)
+	{
+		s.found = true;
+		return FALSE;
+	}
+	else
+		return TRUE;
 }
 
+BOOL CALLBACK JS_Window_IsWindow_Callback_Top(HWND hwnd, LPARAM structPtr)
+{
+	using namespace Julian;
+	sIsWindow& s = *(reinterpret_cast<sIsWindow*>(structPtr));
+	if ((hwnd == s.main) || (GetWindow(hwnd, GW_OWNER) == s.main))
+	{
+		if (hwnd == s.target)
+			s.found = true;
+		else
+			EnumChildWindows(hwnd, JS_Window_IsWindow_Callback_Child, structPtr);
+	}
+
+	if (s.found)
+		return FALSE;
+	else
+		return TRUE;
+}
+
+bool  JS_Window_IsWindow(void* windowHWND)
+{
+#ifdef _WIN32
+	return !!IsWindow((HWND)windowHWND);
+#else
+	using namespace Julian;
+	
+	HWND m = GetMainHwnd();
+	if (!m) return false;
+
+	sIsWindow s{ m, (HWND)windowHWND, false };
+	EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&s));
+	
+	return s.found;
+#endif
+}
 
 
 
@@ -1347,8 +1398,10 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 	using namespace Julian;
 	HWND hwnd = (HWND)windowHWND;
 
-	// According to swell-functions.h, IsWindow is slow in swell. However, JS_Window_Intercept will probably not be called many times per script. 
-	if (!IsWindow(hwnd))
+	// IsWindow is slow in Linux and MacOS. 
+	// However, checking may be prudent this may be necessary since Linux will crash if windowHWND is not an actual window.
+	// Hopefully, JS_Window_InterceptList will not be called many times per script. 
+	if (!JS_Window_IsWindow(hwnd))
 		return ERR_NOT_WINDOW;
 
 	// strtok *replaces* characters in the string, so better copy messages to new char array.
@@ -1507,10 +1560,11 @@ void JS_WindowMessage_ReleaseWindow(void* windowHWND)
 	if (mapWindowToData.count((HWND)windowHWND))
 	{
 		WNDPROC origProc = mapWindowToData[(HWND)windowHWND].origProc;
+		if (JS_Window_IsWindow(windowHWND))
 #ifdef _WIN32
-		SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
-		SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
 		mapWindowToData.erase((HWND)windowHWND);
 	}
@@ -1523,10 +1577,11 @@ void JS_WindowMessage_ReleaseAll()
 	{
 		HWND hwnd = it->first;
 		WNDPROC origProc = it->second.origProc;
+		if (JS_Window_IsWindow(hwnd))
 #ifdef _WIN32
-		SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
-		SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
 	}
 	mapWindowToData.clear();
