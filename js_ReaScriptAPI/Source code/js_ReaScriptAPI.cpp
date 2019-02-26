@@ -96,10 +96,12 @@ v0.970
  * Windows OS: BrowseForOpenFiles returns folder with terminal slash.
  * New functions: Memory allocation and access.
  * WindowMessage functions: Recognize ComboBox message names such as "CB_GETCURSEL".
+v0.971
+ * Fix possible memory leak in File dialogs.
 */
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.970;
+	*versionOut = 0.971;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -207,7 +209,7 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 	char* newInitFolder = (char*)malloc(folderLen);
 	if (!newInitFolder) return -1;
 
-	for (size_t i = 0; i <= folderLen; i++)
+	for (size_t i = 0; i < folderLen; i++)
 		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
 
 	strncpy(fileNameOutNeedBig, initialFile, fileNameOutNeedBig_sz);
@@ -272,7 +274,7 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 	newInitFolder = (char*)malloc(folderLen);
 	if (!newInitFolder) return -1;
 
-	for (size_t i = 0; i <= folderLen; i++)
+	for (size_t i = 0; i < folderLen; i++)
 		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
 
 	// The potentially very long return string will be stored in here
@@ -387,7 +389,7 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 	char* newInitFolder = (char*)malloc(folderLen);
 	if (!newInitFolder) return -1;
 
-	for (size_t i = 0; i <= folderLen; i++)
+	for (size_t i = 0; i < folderLen; i++)
 		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
 
 	_browseinfoA info{
