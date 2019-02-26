@@ -28,6 +28,9 @@ namespace Julian
 	//		memory usage may climb. 
 	map<std::string, HCURSOR> mapFileToMouseCursor;
 
+	//Store the size of allocated memory for Mem functions
+	map<void*, int> mapMallocToSize;
+
 	// Some global variables that will be used when searching for windows.
 	// Since these variables are global, all functions and their callbacks can access the variables without having to pass them via lParams.
 	set<HWND>	foundHWNDs;
@@ -53,13 +56,6 @@ namespace Julian
 		//double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
 	};
 
-	// Struct for IsWindow function.
-	struct sIsWindow
-	{
-		HWND main; // REAPER's main window
-		HWND target; // Window for which status must be checked
-		bool found;
-	};
 
 	// Error codes for WindowMessage_Intercept
 	constexpr int ERR_ALREADY_INTERCEPTED = 0;
@@ -178,7 +174,23 @@ namespace Julian
 		pair<std::string, UINT>("BM_GETCHECK", BM_GETCHECK),
 		pair<std::string, UINT>("BM_SETCHECK", BM_SETCHECK),
 		pair<std::string, UINT>("BM_GETIMAGE", BM_GETIMAGE),
-		pair<std::string, UINT>("BM_SETIMAGE", BM_SETIMAGE)
+		pair<std::string, UINT>("BM_SETIMAGE", BM_SETIMAGE),
+
+		pair<std::string, UINT>("CB_ADDSTRING", CB_ADDSTRING),
+		pair<std::string, UINT>("CB_DELETESTRING", CB_DELETESTRING),
+		pair<std::string, UINT>("CB_GETCOUNT", CB_GETCOUNT),
+		pair<std::string, UINT>("CB_GETCURSEL", CB_GETCURSEL),
+		pair<std::string, UINT>("CB_GETLBTEXT", CB_GETLBTEXT),
+		pair<std::string, UINT>("CB_GETLBTEXTLEN", CB_GETLBTEXTLEN),
+		pair<std::string, UINT>("CB_INSERTSTRING", CB_INSERTSTRING),
+		pair<std::string, UINT>("CB_RESETCONTENT", CB_RESETCONTENT),
+		pair<std::string, UINT>("CB_FINDSTRING", CB_FINDSTRING),
+		pair<std::string, UINT>("CB_SETCURSEL", CB_SETCURSEL),
+		pair<std::string, UINT>("CB_GETITEMDATA", CB_GETITEMDATA),
+		pair<std::string, UINT>("CB_SETITEMDATA", CB_SETITEMDATA),
+		pair<std::string, UINT>("CB_FINDSTRINGEXACT", CB_FINDSTRINGEXACT),
+		pair<std::string, UINT>("CB_INITSTORAGE", CB_INITSTORAGE)
+
 	};
 
 	// Reverse map of mapWM_toMsg. Will be constructed from mapWM_toMsg in REAPER_PLUGIN_ENTRYPOINT.

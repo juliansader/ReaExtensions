@@ -78,20 +78,29 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 	else
 		for (LICE_IBitmap* bm : Julian::LICEBitmaps)
 			LICE__Destroy(bm);
+		for (auto& p : Julian::mapMallocToSize)
+			free(p.first);
 		return 0;
 }
 
-// v0.963:
-// * Fix bug in Find functions in macOS.
-// * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
-// * Window_FindEx function.
-// v0.964:
-// * Implement IsWindow for Linux and MacOS.
+/*
+v0.963:
+ * Fix bug in Find functions in macOS.
+ * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
+ * Window_FindEx function.
+v0.964:
+ * Implement IsWindow for Linux and macOS.
+v0.970
+ * Linux and macOS: Improved IsWindow.
+ * Windows OS: File dialogs accept forward slash.
+ * Windows OS: BrowseForOpenFiles returns folder with terminal slash.
+ * New functions: Memory allocation and access.
+ * WindowMessage functions: Recognize ComboBox message names such as "CB_GETCURSEL".
+*/
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.964;
+	*versionOut = 0.970;
 }
-
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
 {
@@ -101,17 +110,85 @@ void JS_Localize(const char* USEnglish, const char* LangPackSection, char* trans
 	size_t transLen = strlen(trans);
 	bool reallocOK = false;
 	if (realloc_cmd_ptr(&translationOutNeedBig, &translationOutNeedBig_sz, transLen))
-		if (translationOutNeedBig && translationOutNeedBig_sz == transLen)
-			reallocOK = true;
+	if (translationOutNeedBig && translationOutNeedBig_sz == transLen)
+	reallocOK = true;
 	if (reallocOK)
-		memcpy(translationOutNeedBig, trans, transLen);
+	memcpy(translationOutNeedBig, trans, transLen);
 	else if (translationOutNeedBig && translationOutNeedBig_sz > 0)
-		translationOutNeedBig[0] = 0;
+	translationOutNeedBig[0] = 0;
 	return;
 	*/
 	strncpy(translationOut, trans, translationOut_sz);
 	translationOut[translationOut_sz - 1] = 0;
 }
+
+//////////////////////////////////////////////////////////////////////
+
+void* JS_Mem_Alloc(int sizeBytes)
+{
+	using namespace Julian;
+	void* ptr = nullptr;
+	if (sizeBytes > 0) {
+		ptr = malloc(sizeBytes);
+		if (ptr) {
+			mapMallocToSize.emplace(ptr, sizeBytes);
+		}
+	}
+	return ptr;
+}
+
+bool JS_Mem_Free(void* mallocPointer)
+{
+	using namespace Julian;
+	if (mapMallocToSize.count(mallocPointer))
+	{
+		free(mallocPointer);
+		mapMallocToSize.erase(mallocPointer);
+		return true;
+	}
+	else
+		return false;
+}
+
+bool JS_Mem_FromString(void* mallocPointer, int offset, const char* packedString, int stringLength)
+{
+	using namespace Julian;
+	if (mapMallocToSize.count(mallocPointer) && offset >= 0) {
+		if (mapMallocToSize[mallocPointer] >= offset + stringLength)	{
+			memcpy((char*)mallocPointer+offset, packedString, stringLength);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool JS_String(void* pointer, int offset, int lengthChars, char* bufOutNeedBig, int bufOutNeedBig_sz)
+{
+	int len = lengthChars < 0 ? 0 : lengthChars;
+	if (realloc_cmd_ptr(&bufOutNeedBig, &bufOutNeedBig_sz, len)) {
+		if (bufOutNeedBig_sz == len) {
+			memcpy(bufOutNeedBig, (char*)pointer+offset, len);
+			return true;
+		}
+	}
+	return false;
+}
+
+void JS_Int(void* pointer, int offset, int* intOut)
+{
+	*intOut = ((int32_t*)pointer)[offset];
+}
+
+void JS_Byte(void* pointer, int offset, int* byteOut)
+{
+	*byteOut = (int)(((int8_t*)pointer)[offset]);
+}
+
+void JS_Double(void* pointer, int offset, double* doubleOut)
+{
+	*doubleOut = ((double*)pointer)[offset];
+}
+
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -125,6 +202,14 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
 
 #ifdef _WIN32
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	char* newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i <= folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
 	strncpy(fileNameOutNeedBig, initialFile, fileNameOutNeedBig_sz);
 	fileNameOutNeedBig[fileNameOutNeedBig_sz - 1] = 0;
 
@@ -140,7 +225,7 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 		(DWORD)fileNameOutNeedBig_sz,	//DWORD         nMaxFile;
 		NULL,					//LPSTR         lpstrFileTitle;
 		0,						//DWORD         nMaxFileTitle;
-		initialFolder,			//LPCSTR        lpstrInitialDir;
+		newInitFolder,				//LPCSTR        lpstrInitialDir;
 		windowTitle,			//LPCSTR        lpstrTitle;
 		OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST, //DWORD         Flags; -- 
 		0,						//WORD          nFileOffset;
@@ -154,6 +239,7 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 		0						//DWORD         FlagsEx;
 	};
 	BOOL gotFile = GetSaveFileName(&info);
+	free(newInitFolder);
 #else
 	// returns TRUE if file was chosen. 
 	BOOL gotFile = (BOOL)BrowseForSaveFile(windowTitle, initialFolder, initialFile, newExtList, fileNameOutNeedBig, fileNameOutNeedBig_sz);
@@ -172,20 +258,31 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 	constexpr uint32_t LONGLEN = 1024 * 1024;
 
 	// If buffer is succesfully created, this will not be NULL anymore, and must be freed.
-	char* fileNames = NULL;
+	char* fileNames = nullptr;
+	char* newInitFolder = nullptr;
 
 	// Default retval is -1.  Will only become true once all the steps are completed succesfully.
 	int retval = -1;
 
 #ifdef _WIN32
+	char slash = '\\';
+
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i <= folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
 	// The potentially very long return string will be stored in here
-	fileNames = (char*) malloc(LONGLEN);
+	fileNames = (char*)malloc(LONGLEN);
 	if (fileNames) {
 		strncpy(fileNames, initialFile, LONGLEN);
 		fileNames[LONGLEN - 1] = 0;
 
 		DWORD flags = allowMultiple ? (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_ALLOWMULTISELECT)
-									: (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST);
+			: (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST);
 
 		OPENFILENAME info{
 			sizeof(OPENFILENAME),	//DWORD         lStructSize;
@@ -199,7 +296,7 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 			LONGLEN,				//DWORD         nMaxFile;
 			NULL,					//LPSTR         lpstrFileTitle;
 			0,						//DWORD         nMaxFileTitle;
-			initialFolder,			//LPCSTR        lpstrInitialDir;
+			newInitFolder,			//LPCSTR        lpstrInitialDir;
 			windowTitle,			//LPCSTR        lpstrTitle;
 			flags,					//DWORD         Flags; -- 
 			0,						//WORD          nFileOffset;
@@ -216,29 +313,51 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 #else
 	// free() the result of this, if non-NULL.
 	// if allowmul is set, the multiple files are specified the same way GetOpenFileName() returns.
+	char slash = '/';
 	fileNames = BrowseForFiles(windowTitle, initialFolder, initialFile, allowMultiple, newExtList);
 	retval = (fileNames ? -1 : 0);
 	{
 #endif
-		if (retval) { 
+		if (retval) {
 			// If allowMulti, filenames will be 0-separated, and entire string will end in a double \0\0.
-			size_t fileLen = strlen(fileNames);
+			size_t totalLen = strlen(fileNames);
+			size_t firstLen = totalLen;
+			bool addSlash = false;
 			if (allowMultiple) {
-				for (; fileLen < LONGLEN; fileLen++) {
-					if (fileNames[fileLen] == 0 && fileNames[fileLen + 1] == 0)
+				for (; totalLen < LONGLEN; totalLen++) {
+					if (fileNames[totalLen] == 0 && fileNames[totalLen + 1] == 0)
 						break;
 				}
 			}
-			if (fileLen < LONGLEN) {
-				if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, (int)fileLen)) {
-					if (fileNamesOutNeedBig && fileNamesOutNeedBig_sz == fileLen) {
-						memcpy(fileNamesOutNeedBig, fileNames, fileLen);
-						retval = TRUE;
+			if (totalLen > 0) {
+				// WDL/swell returns folder substring with terminal slash, but Windows doesn't.
+				// For consistency, add terminal slash.  (Terminal slash also makes it easier to concatenate folder string with file strings.)
+				// Check if folder substring ended with slash:
+				// (Remember to skip empty folder strings, which may be returned on macOS.)
+				if (firstLen > 0 && firstLen < totalLen && !(fileNames[firstLen - 1] == slash)) {
+					addSlash = true;
+					totalLen = totalLen + 1;
+				}
+
+				if (totalLen < LONGLEN) {
+					if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, (int)totalLen)) {
+						if (fileNamesOutNeedBig && fileNamesOutNeedBig_sz == totalLen) {
+							if (addSlash) {
+								memcpy(fileNamesOutNeedBig, fileNames, firstLen);
+								fileNamesOutNeedBig[firstLen] = slash;
+								memcpy(fileNamesOutNeedBig+firstLen+1, fileNames+firstLen, totalLen-1-firstLen);
+							}
+							else {
+								memcpy(fileNamesOutNeedBig, fileNames, totalLen);
+							}
+							retval = TRUE;
+						}
 					}
 				}
 			}
 		}
 	}
+	if (newInitFolder) free(newInitFolder);
 	if (fileNames) free(fileNames);
 	return retval;
 }
@@ -263,6 +382,14 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 	if (folderOutNeedBig_sz < 32000) return -1;
 
 #ifdef _WIN32
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	char* newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i <= folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
 	_browseinfoA info{
 		NULL,					//HWND        hwndOwner;
 		NULL,					//PCIDLIST_ABSOLUTE pidlRoot;
@@ -270,7 +397,7 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 		caption,				//LPCSTR       lpszTitle; // text to go in the banner over the tree.
 		BIF_NEWDIALOGSTYLE | BIF_BROWSEINCLUDEURLS | BIF_RETURNONLYFSDIRS , //UINT         ulFlags;                       // Flags that control the return stuff
 		BrowseForFolder_CallBack,		//BFFCALLBACK  lpfn;
-		(LPARAM)initialFolder,	//LPARAM       lParam;	// extra info that's passed back in callbacks
+		(LPARAM)newInitFolder,	//LPARAM       lParam;	// extra info that's passed back in callbacks
 		0						//int          iImage;	// output var: where to return the Image index.
 	};
 
@@ -278,6 +405,7 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 	if (folderID)
 		SHGetPathFromIDList(folderID, folderOutNeedBig);
 	ILFree(folderID);
+	free(newInitFolder);
 
 	return (BOOL)!!folderID;
 
@@ -1053,35 +1181,29 @@ void JS_Window_AddressFromHandle(void* handle, double* addressOut)
 // WDL/swell has not implemented IsWindow in Linux., and IsWindow is slow in MacOS.
 // If scripts or extensions try to access a HWND that doesn't exist any more,
 //		REAPER may crash completely.
-// This implementation only searches child windows of REAPER's own window, to save time.
-//		Scripts are in any case only supposed to access REAPER's windows.
-
-BOOL CALLBACK JS_Window_IsWindow_Callback_Child(HWND hwnd, LPARAM structPtr)
+// AFAIK, this implementation only searches WDL/swell windows, but this shouldn't be a problem,
+//		since scripts are in any case only supposed to access REAPER's windows.
+BOOL CALLBACK JS_Window_IsWindow_Callback_Child(HWND hwnd, LPARAM lParam)
 {
-	using namespace Julian;
-	sIsWindow& s = *(reinterpret_cast<sIsWindow*>(structPtr));
-	if (hwnd == s.target)
+	HWND& target = *(reinterpret_cast<HWND*>(lParam));
+	if (hwnd == target)
 	{
-		s.found = true;
+		target = nullptr;
 		return FALSE;
 	}
 	else
 		return TRUE;
 }
 
-BOOL CALLBACK JS_Window_IsWindow_Callback_Top(HWND hwnd, LPARAM structPtr)
+BOOL CALLBACK JS_Window_IsWindow_Callback_Top(HWND hwnd, LPARAM lParam)
 {
-	using namespace Julian;
-	sIsWindow& s = *(reinterpret_cast<sIsWindow*>(structPtr));
-	if ((hwnd == s.main) || (GetWindow(hwnd, GW_OWNER) == s.main))
-	{
-		if (hwnd == s.target)
-			s.found = true;
-		else
-			EnumChildWindows(hwnd, JS_Window_IsWindow_Callback_Child, structPtr);
-	}
+	HWND& target = *(reinterpret_cast<HWND*>(lParam));
+	if (hwnd == target)
+		target = nullptr;
+	else
+		EnumChildWindows(hwnd, JS_Window_IsWindow_Callback_Child, lParam);
 
-	if (s.found)
+	if (!target)
 		return FALSE;
 	else
 		return TRUE;
@@ -1092,15 +1214,16 @@ bool  JS_Window_IsWindow(void* windowHWND)
 #ifdef _WIN32
 	return !!IsWindow((HWND)windowHWND);
 #else
-	using namespace Julian;
-	
-	HWND m = GetMainHwnd();
-	if (!m) return false;
+	// This implementation will enumerate all WDL/swell windows, looking for a match.
+	// The "target" HWND will be passed to each callback function.
+	// If a match is found, target will be replaced with NULL;
+	if (!windowHWND) return false;
 
-	sIsWindow s{ m, (HWND)windowHWND, false };
-	EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&s));
-	
-	return s.found;
+	HWND target = (HWND)windowHWND;
+
+	EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&target));
+
+	return !target;
 #endif
 }
 
@@ -2137,29 +2260,6 @@ HWND JS_Window_AttachTopmostPin(HWND windowHWND)
 void JS_Window_AttachResizeGrip(void* windowHWND)
 {
 	AttachWindowResizeGrip((HWND)windowHWND);
-}
-
-
-////////////////////////////////////////////////////////////
-
-void* JS_PtrFromStr(const char* s)
-{
-	return (void*)s;
-}
-
-void JS_Int(void* address, int offset, int* intOut)
-{
-	*intOut = ((int32_t*)address)[offset];
-}
-
-void JS_Byte(void* address, int offset, int* byteOut)
-{
-	*byteOut = (int)(((int8_t*)address)[offset]);
-}
-
-void JS_Double(void* address, int offset, double* doubleOut)
-{
-	*doubleOut = ((double*)address)[offset];
 }
 
 

@@ -17,6 +17,47 @@ static void* __vararg_JS_Localize(void** arglist, int numparms)
 	return NULL;
 }
 
+////////////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_Mem_Alloc(void** arglist, int numparms)
+{
+	return JS_Mem_Alloc((int)(intptr_t)arglist[0]);
+}
+
+static void* __vararg_JS_Mem_Free(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Mem_Free(arglist[0]);
+}
+
+static void* __vararg_JS_Mem_FromString(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Mem_FromString(arglist[0], (int)(intptr_t)arglist[1], (const char*)arglist[2], (int)(intptr_t)arglist[3]);
+}
+
+static void* __vararg_JS_String(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_String(arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (char*)arglist[3], (int)(intptr_t)arglist[4]);
+}
+
+static void* __vararg_JS_Int(void** arglist, int numparms)
+{
+	JS_Int(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
+	return NULL;
+}
+
+static void* __vararg_JS_Byte(void** arglist, int numparms)
+{
+	JS_Byte(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
+	return NULL;
+}
+
+static void* __vararg_JS_Double(void** arglist, int numparms)
+{
+	JS_Double(arglist[0], (int)(INT_PTR)arglist[1], (double*)arglist[2]);
+	return NULL;
+}
+
+
 ///////////////////////////////////////////////////////////////////////////
 
 static void* __vararg_JS_Dialog_BrowseForSaveFile(void** arglist, int numparms)
@@ -717,32 +758,6 @@ static void* __vararg_JS_Window_AttachResizeGrip(void** arglist, int numparms)
 
 //////////////////////////////////////////////////////////////
 
-
-
-static void* __vararg_JS_Int(void** arglist, int numparms)
-{
-	JS_Int(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
-	return NULL;
-}
-
-static void* __vararg_JS_Byte(void** arglist, int numparms)
-{
-	JS_Byte(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
-	return NULL;
-}
-
-static void* __vararg_JS_Double(void** arglist, int numparms)
-{
-	JS_Double(arglist[0], (int)(INT_PTR)arglist[1], (double*)arglist[2]);
-	return NULL;
-}
-
-static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
-{
-	return JS_PtrFromStr((const char*)arglist[0]);
-}
-
-//////////////////////////////////////////////////////////////////////
 
 static void* __vararg_JS_ListView_GetItemCount(void** arglist, int numparms)
 {

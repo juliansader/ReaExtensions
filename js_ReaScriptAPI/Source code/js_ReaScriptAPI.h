@@ -6,6 +6,14 @@ void  JS_ReaScriptAPI_Version(double* versionOut);
 
 void  JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz);
 
+void* JS_Mem_Alloc(int sizeBytes);
+bool  JS_Mem_Free(void* mallocPointer);
+bool  JS_Mem_FromString(void* mallocPointer, int offset, const char* packedString, int stringLength);
+bool  JS_String(void* pointer, int offset, int lengthChars, char* bufOutNeedBig, int bufOutNeedBig_sz);
+void  JS_Int(void* pointer, int offset, int* intOut);
+void  JS_Byte(void* pointer, int offset, int* byteOut);
+void  JS_Double(void* pointer, int offset, double* doubleOut);
+
 int   JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz);
 int   JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, char* folderOutNeedBIg, int folderOutNeedBig_sz);
 int   JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, bool allowMultiple, char* fileNamesOutNeedBig, int fileNamesOutNeedBig_sz);
@@ -153,11 +161,6 @@ void  JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, cons
 
 HWND  JS_Window_AttachTopmostPin(HWND windowHWND);
 void  JS_Window_AttachResizeGrip(void* windowHWND);
-
-void* JS_PtrFromStr(const char* str);
-void  JS_Int(void* address, int offset, int* intOut);
-void  JS_Byte(void* address, int offset, int* byteOut);
-void  JS_Double(void* address, int offset, double* doubleOut);
 
 int   JS_ListView_GetItemCount(HWND listviewHWND);
 int   JS_ListView_GetSelectedCount(HWND listviewHWND);
