@@ -98,10 +98,15 @@ v0.970
  * WindowMessage functions: Recognize ComboBox message names such as "CB_GETCURSEL".
 v0.971
  * Fix possible memory leak in File dialogs.
+v0.972
+ * macOS: Fixed GetClientRect.
+ * WindowsOS: Confirmation dialogs for BrowseForSaveFile and BrowseForOpenFiles.
+ * New function: MonitorFromRect
+ * GDI: Linux and macOS use same color format as Windows.
 */
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.971;
+	*versionOut = 0.972;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -198,7 +203,7 @@ void JS_Double(void* pointer, int offset, double* doubleOut)
 int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz)
 {			
 	// NeedBig buffers should be 2^15 chars by default
-	if (fileNameOutNeedBig_sz < 32000) return -1;
+	if (fileNameOutNeedBig_sz < 16000) return -1;
 
 	// Set default extension and filter
 	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
@@ -207,7 +212,7 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
 	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
 	char* newInitFolder = (char*)malloc(folderLen);
-	if (!newInitFolder) return -1;
+	if (!newInitFolder) return -2;
 
 	for (size_t i = 0; i < folderLen; i++)
 		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
@@ -229,7 +234,7 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 		0,						//DWORD         nMaxFileTitle;
 		newInitFolder,				//LPCSTR        lpstrInitialDir;
 		windowTitle,			//LPCSTR        lpstrTitle;
-		OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST, //DWORD         Flags; -- 
+		OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT, //DWORD         Flags; -- 
 		0,						//WORD          nFileOffset;
 		0,						//WORD          nFileExtension;
 		NULL,					//LPCSTR        lpstrDefExt;
@@ -283,8 +288,8 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 		strncpy(fileNames, initialFile, LONGLEN);
 		fileNames[LONGLEN - 1] = 0;
 
-		DWORD flags = allowMultiple ? (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_ALLOWMULTISELECT)
-			: (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST);
+		DWORD flags = allowMultiple ? (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_CREATEPROMPT | OFN_ALLOWMULTISELECT)
+			: (OFN_EXPLORER | OFN_LONGNAMES | OFN_CREATEPROMPT | OFN_PATHMUSTEXIST);
 
 		OPENFILENAME info{
 			sizeof(OPENFILENAME),	//DWORD         lStructSize;
@@ -422,13 +427,23 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 
 bool JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
 {
-	HWND hwnd = (HWND)windowHWND;
 	RECT r{ 0, 0, 0, 0 };
-	bool isOK = !!GetWindowRect(hwnd, &r);
+	bool isOK = !!GetWindowRect((HWND)windowHWND, &r);
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut	   = (int)r.bottom;
+		*bottomOut = (int)r.top;			
+	}
+	else {
+		*topOut	   = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
 	*leftOut   = (int)r.left;
 	*rightOut  = (int)r.right;
-	*topOut	   = (int)r.top;
-	*bottomOut = (int)r.bottom;
+
 	return (isOK);
 }
 
@@ -436,8 +451,7 @@ void JS_Window_ScreenToClient(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
-	HWND hwnd = (HWND)windowHWND;
-	ScreenToClient(hwnd, &p);
+	ScreenToClient((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
 }
@@ -446,8 +460,7 @@ void JS_Window_ClientToScreen(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
-	HWND hwnd = (HWND)windowHWND;
-	ClientToScreen(hwnd, &p);
+	ClientToScreen((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
 }
@@ -465,36 +478,68 @@ bool JS_Window_GetClientRect(void* windowHWND, int* leftOut, int* topOut, int* r
 	GetClientRect(hwnd, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
-	if (isOK)
-	{
+	if (isOK) {
 		POINT p{ 0, 0 };
 		ClientToScreen(hwnd, &p);
 		*leftOut = (int)p.x;
-		*rightOut = (int)p.x + (int)r.right;
 		*topOut = (int)p.y;
+		*rightOut = (int)p.x + (int)r.right;
+#ifdef __APPLE__
+		*bottomOut = (int)p.y - (int)r.bottom; // macOS uses coordinates from bottom, so r.bottom must be smaller than r.top
+#else
 		*bottomOut = (int)p.y + (int)r.bottom;
+#endif
 	}
 	return (isOK);
 }
 
-
-/*
-bool JS_Window_GetClientRect(void* windowHWND, int* widthOut, int* heightOut)
+bool JS_Window_GetClientSize(void* windowHWND, int* widthOut, int* heightOut)
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	// However, if hwnd is not a true hwnd, SWELL will return a {0,0,0,0} rect.
-	RECT r;
+	RECT r{ 0, 0, 0, 0 };
 #ifdef _WIN32
 	bool isOK = !!GetClientRect((HWND)windowHWND, &r);
 #else
 	GetClientRect((HWND)windowHWND, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
-	*widthOut = r.right;
-	*heightOut = r.bottom;
+	r.right = (r.right >= 0) ? (r.right) : (-(r.right));
+	r.bottom = (r.bottom >= 0) ? (r.bottom) : (-(r.bottom));
+	*widthOut = (int)r.right;
+	*heightOut = (int)r.bottom;
 	return (isOK);
 }
-*/
+
+void JS_Window_MonitorFromRect(int x1, int y1, int x2, int y2, bool wantWork, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
+{
+	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
+	RECT s{ x1, y1, x2, y2 };
+#ifdef _WIN32
+	HMONITOR m = MonitorFromRect(&s, MONITOR_DEFAULTTOPRIMARY);
+	MONITORINFO i{ sizeof(MONITORINFO), };
+	GetMonitorInfo(m, &i);
+	RECT& r = wantWork ? i.rcWork : i.rcMonitor;
+#else
+	RECT r{ 0,0,0,0 };
+	SWELL_GetViewPort(&r, &s, wantWork);
+#endif
+	
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut	   = (int)r.bottom;
+		*bottomOut = (int)r.top;			
+	}
+	else {
+		*topOut	   = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
+	*leftOut = (int)r.left;
+	*rightOut = (int)r.right;
+}
 
 void* JS_Window_FromPoint(int x, int y)
 {
@@ -619,6 +664,7 @@ void  JS_Window_ReleaseCapture()
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 {
 	int intMode;
+
 #ifdef _WIN32
 	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
 	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
@@ -626,7 +672,7 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
 	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
 	else return nullptr;
-
+	
 	return (void*)GetWindowLongPtr((HWND)windowHWND, intMode);
 
 #else 
@@ -639,6 +685,33 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 	else return nullptr;
 
 	return (void*)GetWindowLong((HWND)windowHWND, intMode);
+#endif
+}
+
+void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
+{
+	int intMode;
+
+#ifdef _WIN32
+	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else {*retvalOut = 0; return;}
+
+	*retvalOut = (double)GetWindowLongPtr((HWND)windowHWND, intMode);
+
+#else 
+	if (strstr(info, "USER"))			intMode = GWL_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWL_WNDPROC;
+	else if (strstr(info, "DLG"))		intMode = DWL_DLGPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else {*retvalOut = 0; return;}
+
+	*retvalOut = (double)GetWindowLong((HWND)windowHWND, intMode);
 #endif
 }
 
@@ -1139,7 +1212,7 @@ bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 		{
 			if (strchr(mode, 'A'))
 			{
-				OK = JS_Window_SetOpacity_ObjC((void*)windowHWND, value);
+				OK = JS_Window_SetOpacity_ObjC(windowHWND, value);
 #endif
 			}
 		}
@@ -1220,8 +1293,34 @@ bool  JS_Window_IsWindow(void* windowHWND)
 	// The "target" HWND will be passed to each callback function.
 	// If a match is found, target will be replaced with NULL;
 	if (!windowHWND) return false;
-
 	HWND target = (HWND)windowHWND;
+	/*bool isFloatingDock;
+
+	if (!windowHWND)
+		return false;
+	else if (DockIsChildOfDock(target, &isFloatingDock) != -1)
+		return true;
+	*/
+
+	/*HWND editor = MIDIEditor_GetActive();
+	if (editor) {
+		if (target == editor)
+			return true;
+		else {
+			EnumChildWindows(editor, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
+			if (!target) return true;
+		}
+	}
+
+	HWND main = GetMainHwnd();
+	if (main) {
+		if (target == main)
+			return true;
+		else {
+			EnumChildWindows(main, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
+			if (!target) return true;
+		}
+	}*/
 
 	EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&target));
 
@@ -1801,8 +1900,8 @@ void JS_GDI_ReleaseDC(void* windowHWND, void* deviceHDC)
 
 void* JS_GDI_CreateFillBrush(int color)
 {
-	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 #ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 	return CreateSolidBrush(color);
 #else
 	return CreateSolidBrushAlpha(color, 1);
@@ -1811,7 +1910,9 @@ void* JS_GDI_CreateFillBrush(int color)
 
 void* JS_GDI_CreatePen(int width, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	return CreatePen(PS_SOLID, width, color);
 }
 
@@ -1891,7 +1992,10 @@ int JS_GDI_GetSysColor(const char* GUIElement)
 	else if (strstr(GUIElement, "INFOBK"))		intMode = COLOR_INFOBK;
 	else if (strstr(GUIElement, "INFOTEXT"))	intMode = COLOR_INFOTEXT;
 	int color = GetSysColor(intMode);
-	return ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);;
+#ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
+	return color;
 }
 
 void JS_GDI_SetTextBkMode(void* deviceHDC, int mode)
@@ -1901,20 +2005,27 @@ void JS_GDI_SetTextBkMode(void* deviceHDC, int mode)
 
 void JS_GDI_SetTextBkColor(void* deviceHDC, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetBkColor((HDC)deviceHDC, color);
 }
 
 void JS_GDI_SetTextColor(void* deviceHDC, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetTextColor((HDC)deviceHDC, color);
 }
 
 int JS_GDI_GetTextColor(void* deviceHDC)
 {
 	int color = GetTextColor((HDC)deviceHDC);
-	return ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
+	return color;
 }
 
 int JS_GDI_DrawText(void* deviceHDC, const char *text, int len, int left, int top, int right, int bottom, const char* align)
@@ -1941,7 +2052,9 @@ int JS_GDI_DrawText(void* deviceHDC, const char *text, int len, int left, int to
 
 void JS_GDI_SetPixel(void* deviceHDC, int x, int y, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetPixel((HDC)deviceHDC, x, y, color);
 }
 

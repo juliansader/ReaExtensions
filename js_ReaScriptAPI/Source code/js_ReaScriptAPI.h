@@ -20,8 +20,10 @@ int   JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialF
 
 bool  JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut);
 bool  JS_Window_GetClientRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut);
+bool  JS_Window_GetClientSize(void* windowHWND, int* widthOut, int* heightOut);
 void  JS_Window_ScreenToClient(void* windowHWND, int x, int y, int* xOut, int* yOut);
 void  JS_Window_ClientToScreen(void* windowHWND, int x, int y, int* xOut, int* yOut);
+void  JS_Window_MonitorFromRect(int x1, int y1, int x2, int y2, bool wantWork, int* leftOut, int* topOut, int* rightOut, int* bottomOut);
 
 void* JS_Window_FromPoint(int x, int y);
 
@@ -47,7 +49,8 @@ void  JS_Window_Resize(void* windowHWND, int width, int height);
 void  JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height);
 void  JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWND);
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info);
-bool  JS_Window_SetOpacity_ObjC(void* windowHWND, double alpha);
+void  JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut);
+bool  JS_Window_SetOpacity_ObjC(HWND windowHWND, double alpha);
 bool  JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value);
 
 void  JS_Window_SetFocus(void* windowHWND);

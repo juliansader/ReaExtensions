@@ -99,6 +99,17 @@ static void* __vararg_JS_Window_GetClientRect(void** arglist, int numparms)
   return (void*)(intptr_t)JS_Window_GetClientRect((void*)arglist[0], (int*)arglist[1], (int*)arglist[2], (int*)arglist[3], (int*)arglist[4]);
 }
 
+static void* __vararg_JS_Window_GetClientSize(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Window_GetClientSize((void*)arglist[0], (int*)arglist[1], (int*)arglist[2]);
+}
+
+static void* __vararg_JS_Window_MonitorFromRect(void** arglist, int numparms)
+{
+	JS_Window_MonitorFromRect((int)(intptr_t)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (bool)arglist[4], (int*)arglist[5], (int*)arglist[6], (int*)arglist[7], (int*)arglist[8]);
+	return nullptr;
+}
+
 static void* __vararg_JS_Window_FromPoint(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_Window_FromPoint((int)(intptr_t)arglist[0], (int)(intptr_t)arglist[1]);
@@ -259,6 +270,12 @@ static void* __vararg_JS_Window_SetZOrder(void** arglist, int numparms)
 static void* __vararg_JS_Window_GetLongPtr(void** arglist, int numparms)
 {
 	return JS_Window_GetLongPtr((void*)arglist[0], (const char*)arglist[1]);
+}
+
+static void* __vararg_JS_Window_GetLong(void** arglist, int numparms)
+{
+	JS_Window_GetLong((void*)arglist[0], (const char*)arglist[1], (double*)arglist[2]);
+	return nullptr;
 }
 
 static void* __vararg_JS_Window_SetOpacity(void** arglist, int numparms)
