@@ -78,18 +78,36 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 	else
 		for (LICE_IBitmap* bm : Julian::LICEBitmaps)
 			LICE__Destroy(bm);
+		for (auto& p : Julian::mapMallocToSize)
+			free(p.first);
 		return 0;
 }
 
-// v0.963:
-// * Fix bug in Find functions in macOS.
-// * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
-// * Window_FindEx function.
+/*
+v0.963:
+ * Fix bug in Find functions in macOS.
+ * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
+ * Window_FindEx function.
+v0.964:
+ * Implement IsWindow for Linux and macOS.
+v0.970
+ * Linux and macOS: Improved IsWindow.
+ * Windows OS: File dialogs accept forward slash.
+ * Windows OS: BrowseForOpenFiles returns folder with terminal slash.
+ * New functions: Memory allocation and access.
+ * WindowMessage functions: Recognize ComboBox message names such as "CB_GETCURSEL".
+v0.971
+ * Fix possible memory leak in File dialogs.
+v0.972
+ * macOS: Fixed GetClientRect.
+ * WindowsOS: Confirmation dialogs for BrowseForSaveFile and BrowseForOpenFiles.
+ * New function: MonitorFromRect
+ * GDI: Linux and macOS use same color format as Windows.
+*/
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.963;
+	*versionOut = 0.972;
 }
-
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
 {
@@ -99,17 +117,85 @@ void JS_Localize(const char* USEnglish, const char* LangPackSection, char* trans
 	size_t transLen = strlen(trans);
 	bool reallocOK = false;
 	if (realloc_cmd_ptr(&translationOutNeedBig, &translationOutNeedBig_sz, transLen))
-		if (translationOutNeedBig && translationOutNeedBig_sz == transLen)
-			reallocOK = true;
+	if (translationOutNeedBig && translationOutNeedBig_sz == transLen)
+	reallocOK = true;
 	if (reallocOK)
-		memcpy(translationOutNeedBig, trans, transLen);
+	memcpy(translationOutNeedBig, trans, transLen);
 	else if (translationOutNeedBig && translationOutNeedBig_sz > 0)
-		translationOutNeedBig[0] = 0;
+	translationOutNeedBig[0] = 0;
 	return;
 	*/
 	strncpy(translationOut, trans, translationOut_sz);
 	translationOut[translationOut_sz - 1] = 0;
 }
+
+//////////////////////////////////////////////////////////////////////
+
+void* JS_Mem_Alloc(int sizeBytes)
+{
+	using namespace Julian;
+	void* ptr = nullptr;
+	if (sizeBytes > 0) {
+		ptr = malloc(sizeBytes);
+		if (ptr) {
+			mapMallocToSize.emplace(ptr, sizeBytes);
+		}
+	}
+	return ptr;
+}
+
+bool JS_Mem_Free(void* mallocPointer)
+{
+	using namespace Julian;
+	if (mapMallocToSize.count(mallocPointer))
+	{
+		free(mallocPointer);
+		mapMallocToSize.erase(mallocPointer);
+		return true;
+	}
+	else
+		return false;
+}
+
+bool JS_Mem_FromString(void* mallocPointer, int offset, const char* packedString, int stringLength)
+{
+	using namespace Julian;
+	if (mapMallocToSize.count(mallocPointer) && offset >= 0) {
+		if (mapMallocToSize[mallocPointer] >= offset + stringLength)	{
+			memcpy((char*)mallocPointer+offset, packedString, stringLength);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool JS_String(void* pointer, int offset, int lengthChars, char* bufOutNeedBig, int bufOutNeedBig_sz)
+{
+	int len = lengthChars < 0 ? 0 : lengthChars;
+	if (realloc_cmd_ptr(&bufOutNeedBig, &bufOutNeedBig_sz, len)) {
+		if (bufOutNeedBig_sz == len) {
+			memcpy(bufOutNeedBig, (char*)pointer+offset, len);
+			return true;
+		}
+	}
+	return false;
+}
+
+void JS_Int(void* pointer, int offset, int* intOut)
+{
+	*intOut = ((int32_t*)pointer)[offset];
+}
+
+void JS_Byte(void* pointer, int offset, int* byteOut)
+{
+	*byteOut = (int)(((int8_t*)pointer)[offset]);
+}
+
+void JS_Double(void* pointer, int offset, double* doubleOut)
+{
+	*doubleOut = ((double*)pointer)[offset];
+}
+
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -117,12 +203,20 @@ void JS_Localize(const char* USEnglish, const char* LangPackSection, char* trans
 int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz)
 {			
 	// NeedBig buffers should be 2^15 chars by default
-	if (fileNameOutNeedBig_sz < 32000) return -1;
+	if (fileNameOutNeedBig_sz < 16000) return -1;
 
 	// Set default extension and filter
 	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
 
 #ifdef _WIN32
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	char* newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -2;
+
+	for (size_t i = 0; i < folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
 	strncpy(fileNameOutNeedBig, initialFile, fileNameOutNeedBig_sz);
 	fileNameOutNeedBig[fileNameOutNeedBig_sz - 1] = 0;
 
@@ -138,9 +232,9 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 		(DWORD)fileNameOutNeedBig_sz,	//DWORD         nMaxFile;
 		NULL,					//LPSTR         lpstrFileTitle;
 		0,						//DWORD         nMaxFileTitle;
-		initialFolder,			//LPCSTR        lpstrInitialDir;
+		newInitFolder,				//LPCSTR        lpstrInitialDir;
 		windowTitle,			//LPCSTR        lpstrTitle;
-		OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST, //DWORD         Flags; -- 
+		OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT, //DWORD         Flags; -- 
 		0,						//WORD          nFileOffset;
 		0,						//WORD          nFileExtension;
 		NULL,					//LPCSTR        lpstrDefExt;
@@ -152,6 +246,7 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 		0						//DWORD         FlagsEx;
 	};
 	BOOL gotFile = GetSaveFileName(&info);
+	free(newInitFolder);
 #else
 	// returns TRUE if file was chosen. 
 	BOOL gotFile = (BOOL)BrowseForSaveFile(windowTitle, initialFolder, initialFile, newExtList, fileNameOutNeedBig, fileNameOutNeedBig_sz);
@@ -170,20 +265,31 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 	constexpr uint32_t LONGLEN = 1024 * 1024;
 
 	// If buffer is succesfully created, this will not be NULL anymore, and must be freed.
-	char* fileNames = NULL;
+	char* fileNames = nullptr;
+	char* newInitFolder = nullptr;
 
 	// Default retval is -1.  Will only become true once all the steps are completed succesfully.
 	int retval = -1;
 
 #ifdef _WIN32
+	char slash = '\\';
+
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i < folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
 	// The potentially very long return string will be stored in here
-	fileNames = (char*) malloc(LONGLEN);
+	fileNames = (char*)malloc(LONGLEN);
 	if (fileNames) {
 		strncpy(fileNames, initialFile, LONGLEN);
 		fileNames[LONGLEN - 1] = 0;
 
-		DWORD flags = allowMultiple ? (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_ALLOWMULTISELECT)
-									: (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST);
+		DWORD flags = allowMultiple ? (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_CREATEPROMPT | OFN_ALLOWMULTISELECT)
+			: (OFN_EXPLORER | OFN_LONGNAMES | OFN_CREATEPROMPT | OFN_PATHMUSTEXIST);
 
 		OPENFILENAME info{
 			sizeof(OPENFILENAME),	//DWORD         lStructSize;
@@ -197,7 +303,7 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 			LONGLEN,				//DWORD         nMaxFile;
 			NULL,					//LPSTR         lpstrFileTitle;
 			0,						//DWORD         nMaxFileTitle;
-			initialFolder,			//LPCSTR        lpstrInitialDir;
+			newInitFolder,			//LPCSTR        lpstrInitialDir;
 			windowTitle,			//LPCSTR        lpstrTitle;
 			flags,					//DWORD         Flags; -- 
 			0,						//WORD          nFileOffset;
@@ -214,29 +320,51 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 #else
 	// free() the result of this, if non-NULL.
 	// if allowmul is set, the multiple files are specified the same way GetOpenFileName() returns.
+	char slash = '/';
 	fileNames = BrowseForFiles(windowTitle, initialFolder, initialFile, allowMultiple, newExtList);
 	retval = (fileNames ? -1 : 0);
 	{
 #endif
-		if (retval) { 
+		if (retval) {
 			// If allowMulti, filenames will be 0-separated, and entire string will end in a double \0\0.
-			size_t fileLen = strlen(fileNames);
+			size_t totalLen = strlen(fileNames);
+			size_t firstLen = totalLen;
+			bool addSlash = false;
 			if (allowMultiple) {
-				for (; fileLen < LONGLEN; fileLen++) {
-					if (fileNames[fileLen] == 0 && fileNames[fileLen + 1] == 0)
+				for (; totalLen < LONGLEN; totalLen++) {
+					if (fileNames[totalLen] == 0 && fileNames[totalLen + 1] == 0)
 						break;
 				}
 			}
-			if (fileLen < LONGLEN) {
-				if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, (int)fileLen)) {
-					if (fileNamesOutNeedBig && fileNamesOutNeedBig_sz == fileLen) {
-						memcpy(fileNamesOutNeedBig, fileNames, fileLen);
-						retval = TRUE;
+			if (totalLen > 0) {
+				// WDL/swell returns folder substring with terminal slash, but Windows doesn't.
+				// For consistency, add terminal slash.  (Terminal slash also makes it easier to concatenate folder string with file strings.)
+				// Check if folder substring ended with slash:
+				// (Remember to skip empty folder strings, which may be returned on macOS.)
+				if (firstLen > 0 && firstLen < totalLen && !(fileNames[firstLen - 1] == slash)) {
+					addSlash = true;
+					totalLen = totalLen + 1;
+				}
+
+				if (totalLen < LONGLEN) {
+					if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, (int)totalLen)) {
+						if (fileNamesOutNeedBig && fileNamesOutNeedBig_sz == totalLen) {
+							if (addSlash) {
+								memcpy(fileNamesOutNeedBig, fileNames, firstLen);
+								fileNamesOutNeedBig[firstLen] = slash;
+								memcpy(fileNamesOutNeedBig+firstLen+1, fileNames+firstLen, totalLen-1-firstLen);
+							}
+							else {
+								memcpy(fileNamesOutNeedBig, fileNames, totalLen);
+							}
+							retval = TRUE;
+						}
 					}
 				}
 			}
 		}
 	}
+	if (newInitFolder) free(newInitFolder);
 	if (fileNames) free(fileNames);
 	return retval;
 }
@@ -261,6 +389,14 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 	if (folderOutNeedBig_sz < 32000) return -1;
 
 #ifdef _WIN32
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	char* newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i < folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
 	_browseinfoA info{
 		NULL,					//HWND        hwndOwner;
 		NULL,					//PCIDLIST_ABSOLUTE pidlRoot;
@@ -268,7 +404,7 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 		caption,				//LPCSTR       lpszTitle; // text to go in the banner over the tree.
 		BIF_NEWDIALOGSTYLE | BIF_BROWSEINCLUDEURLS | BIF_RETURNONLYFSDIRS , //UINT         ulFlags;                       // Flags that control the return stuff
 		BrowseForFolder_CallBack,		//BFFCALLBACK  lpfn;
-		(LPARAM)initialFolder,	//LPARAM       lParam;	// extra info that's passed back in callbacks
+		(LPARAM)newInitFolder,	//LPARAM       lParam;	// extra info that's passed back in callbacks
 		0						//int          iImage;	// output var: where to return the Image index.
 	};
 
@@ -276,6 +412,7 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 	if (folderID)
 		SHGetPathFromIDList(folderID, folderOutNeedBig);
 	ILFree(folderID);
+	free(newInitFolder);
 
 	return (BOOL)!!folderID;
 
@@ -290,13 +427,23 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 
 bool JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
 {
-	HWND hwnd = (HWND)windowHWND;
 	RECT r{ 0, 0, 0, 0 };
-	bool isOK = !!GetWindowRect(hwnd, &r);
+	bool isOK = !!GetWindowRect((HWND)windowHWND, &r);
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut	   = (int)r.bottom;
+		*bottomOut = (int)r.top;			
+	}
+	else {
+		*topOut	   = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
 	*leftOut   = (int)r.left;
 	*rightOut  = (int)r.right;
-	*topOut	   = (int)r.top;
-	*bottomOut = (int)r.bottom;
+
 	return (isOK);
 }
 
@@ -304,8 +451,7 @@ void JS_Window_ScreenToClient(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
-	HWND hwnd = (HWND)windowHWND;
-	ScreenToClient(hwnd, &p);
+	ScreenToClient((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
 }
@@ -314,8 +460,7 @@ void JS_Window_ClientToScreen(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
-	HWND hwnd = (HWND)windowHWND;
-	ClientToScreen(hwnd, &p);
+	ClientToScreen((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
 }
@@ -333,36 +478,68 @@ bool JS_Window_GetClientRect(void* windowHWND, int* leftOut, int* topOut, int* r
 	GetClientRect(hwnd, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
-	if (isOK)
-	{
+	if (isOK) {
 		POINT p{ 0, 0 };
 		ClientToScreen(hwnd, &p);
 		*leftOut = (int)p.x;
-		*rightOut = (int)p.x + (int)r.right;
 		*topOut = (int)p.y;
+		*rightOut = (int)p.x + (int)r.right;
+#ifdef __APPLE__
+		*bottomOut = (int)p.y - (int)r.bottom; // macOS uses coordinates from bottom, so r.bottom must be smaller than r.top
+#else
 		*bottomOut = (int)p.y + (int)r.bottom;
+#endif
 	}
 	return (isOK);
 }
 
-
-/*
-bool JS_Window_GetClientRect(void* windowHWND, int* widthOut, int* heightOut)
+bool JS_Window_GetClientSize(void* windowHWND, int* widthOut, int* heightOut)
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	// However, if hwnd is not a true hwnd, SWELL will return a {0,0,0,0} rect.
-	RECT r;
+	RECT r{ 0, 0, 0, 0 };
 #ifdef _WIN32
 	bool isOK = !!GetClientRect((HWND)windowHWND, &r);
 #else
 	GetClientRect((HWND)windowHWND, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
-	*widthOut = r.right;
-	*heightOut = r.bottom;
+	r.right = (r.right >= 0) ? (r.right) : (-(r.right));
+	r.bottom = (r.bottom >= 0) ? (r.bottom) : (-(r.bottom));
+	*widthOut = (int)r.right;
+	*heightOut = (int)r.bottom;
 	return (isOK);
 }
-*/
+
+void JS_Window_MonitorFromRect(int x1, int y1, int x2, int y2, bool wantWork, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
+{
+	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
+	RECT s{ x1, y1, x2, y2 };
+#ifdef _WIN32
+	HMONITOR m = MonitorFromRect(&s, MONITOR_DEFAULTTOPRIMARY);
+	MONITORINFO i{ sizeof(MONITORINFO), };
+	GetMonitorInfo(m, &i);
+	RECT& r = wantWork ? i.rcWork : i.rcMonitor;
+#else
+	RECT r{ 0,0,0,0 };
+	SWELL_GetViewPort(&r, &s, wantWork);
+#endif
+	
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut	   = (int)r.bottom;
+		*bottomOut = (int)r.top;			
+	}
+	else {
+		*topOut	   = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
+	*leftOut = (int)r.left;
+	*rightOut = (int)r.right;
+}
 
 void* JS_Window_FromPoint(int x, int y)
 {
@@ -487,6 +664,7 @@ void  JS_Window_ReleaseCapture()
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 {
 	int intMode;
+
 #ifdef _WIN32
 	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
 	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
@@ -494,7 +672,7 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
 	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
 	else return nullptr;
-
+	
 	return (void*)GetWindowLongPtr((HWND)windowHWND, intMode);
 
 #else 
@@ -507,6 +685,33 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 	else return nullptr;
 
 	return (void*)GetWindowLong((HWND)windowHWND, intMode);
+#endif
+}
+
+void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
+{
+	int intMode;
+
+#ifdef _WIN32
+	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else {*retvalOut = 0; return;}
+
+	*retvalOut = (double)GetWindowLongPtr((HWND)windowHWND, intMode);
+
+#else 
+	if (strstr(info, "USER"))			intMode = GWL_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWL_WNDPROC;
+	else if (strstr(info, "DLG"))		intMode = DWL_DLGPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else {*retvalOut = 0; return;}
+
+	*retvalOut = (double)GetWindowLong((HWND)windowHWND, intMode);
 #endif
 }
 
@@ -866,7 +1071,7 @@ int JS_Window_ArrayAllTop(double* reaperarray)
 {
 	// Enumerate through all top-level windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
 	set<HWND> foundHWNDs;
-	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));;
+	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
 
 	return ConvertSetHWNDToArray(foundHWNDs, reaperarray);
 }
@@ -977,7 +1182,7 @@ bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 	// Opacity can only be applied to top-level framed windows, AFAIK, and in Linux, REAPER crashes if opacity is applied to a child window.
 	// So must check that style is WS_THICKFRAME.
 	bool OK = false;
-	if (IsWindow(windowHWND))
+	if (JS_Window_IsWindow(windowHWND))
 	{
 #ifdef _WIN32
 		if (GetWindowLongPtr(windowHWND, GWL_STYLE) & WS_THICKFRAME)
@@ -1007,7 +1212,7 @@ bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 		{
 			if (strchr(mode, 'A'))
 			{
-				OK = JS_Window_SetOpacity_ObjC((void*)windowHWND, value);
+				OK = JS_Window_SetOpacity_ObjC(windowHWND, value);
 #endif
 			}
 		}
@@ -1047,11 +1252,81 @@ void JS_Window_AddressFromHandle(void* handle, double* addressOut)
 	*addressOut = (double)(intptr_t)handle;
 }
 
-bool  JS_Window_IsWindow(void* windowHWND)
+//---------------------------------------------------------------------------------
+// WDL/swell has not implemented IsWindow in Linux., and IsWindow is slow in MacOS.
+// If scripts or extensions try to access a HWND that doesn't exist any more,
+//		REAPER may crash completely.
+// AFAIK, this implementation only searches WDL/swell windows, but this shouldn't be a problem,
+//		since scripts are in any case only supposed to access REAPER's windows.
+BOOL CALLBACK JS_Window_IsWindow_Callback_Child(HWND hwnd, LPARAM lParam)
 {
-	return !!IsWindow((HWND)windowHWND);
+	HWND& target = *(reinterpret_cast<HWND*>(lParam));
+	if (hwnd == target)
+	{
+		target = nullptr;
+		return FALSE;
+	}
+	else
+		return TRUE;
 }
 
+BOOL CALLBACK JS_Window_IsWindow_Callback_Top(HWND hwnd, LPARAM lParam)
+{
+	HWND& target = *(reinterpret_cast<HWND*>(lParam));
+	if (hwnd == target)
+		target = nullptr;
+	else
+		EnumChildWindows(hwnd, JS_Window_IsWindow_Callback_Child, lParam);
+
+	if (!target)
+		return FALSE;
+	else
+		return TRUE;
+}
+
+bool  JS_Window_IsWindow(void* windowHWND)
+{
+#ifdef _WIN32
+	return !!IsWindow((HWND)windowHWND);
+#else
+	// This implementation will enumerate all WDL/swell windows, looking for a match.
+	// The "target" HWND will be passed to each callback function.
+	// If a match is found, target will be replaced with NULL;
+	if (!windowHWND) return false;
+	HWND target = (HWND)windowHWND;
+	/*bool isFloatingDock;
+
+	if (!windowHWND)
+		return false;
+	else if (DockIsChildOfDock(target, &isFloatingDock) != -1)
+		return true;
+	*/
+
+	/*HWND editor = MIDIEditor_GetActive();
+	if (editor) {
+		if (target == editor)
+			return true;
+		else {
+			EnumChildWindows(editor, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
+			if (!target) return true;
+		}
+	}
+
+	HWND main = GetMainHwnd();
+	if (main) {
+		if (target == main)
+			return true;
+		else {
+			EnumChildWindows(main, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
+			if (!target) return true;
+		}
+	}*/
+
+	EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&target));
+
+	return !target;
+#endif
+}
 
 
 
@@ -1347,8 +1622,10 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 	using namespace Julian;
 	HWND hwnd = (HWND)windowHWND;
 
-	// According to swell-functions.h, IsWindow is slow in swell. However, JS_Window_Intercept will probably not be called many times per script. 
-	if (!IsWindow(hwnd))
+	// IsWindow is slow in Linux and MacOS. 
+	// However, checking may be prudent this may be necessary since Linux will crash if windowHWND is not an actual window.
+	// Hopefully, JS_Window_InterceptList will not be called many times per script. 
+	if (!JS_Window_IsWindow(hwnd))
 		return ERR_NOT_WINDOW;
 
 	// strtok *replaces* characters in the string, so better copy messages to new char array.
@@ -1507,10 +1784,11 @@ void JS_WindowMessage_ReleaseWindow(void* windowHWND)
 	if (mapWindowToData.count((HWND)windowHWND))
 	{
 		WNDPROC origProc = mapWindowToData[(HWND)windowHWND].origProc;
+		if (JS_Window_IsWindow(windowHWND))
 #ifdef _WIN32
-		SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
-		SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
 		mapWindowToData.erase((HWND)windowHWND);
 	}
@@ -1523,10 +1801,11 @@ void JS_WindowMessage_ReleaseAll()
 	{
 		HWND hwnd = it->first;
 		WNDPROC origProc = it->second.origProc;
+		if (JS_Window_IsWindow(hwnd))
 #ifdef _WIN32
-		SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
-		SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
 	}
 	mapWindowToData.clear();
@@ -1621,8 +1900,8 @@ void JS_GDI_ReleaseDC(void* windowHWND, void* deviceHDC)
 
 void* JS_GDI_CreateFillBrush(int color)
 {
-	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 #ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 	return CreateSolidBrush(color);
 #else
 	return CreateSolidBrushAlpha(color, 1);
@@ -1631,7 +1910,9 @@ void* JS_GDI_CreateFillBrush(int color)
 
 void* JS_GDI_CreatePen(int width, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	return CreatePen(PS_SOLID, width, color);
 }
 
@@ -1711,7 +1992,10 @@ int JS_GDI_GetSysColor(const char* GUIElement)
 	else if (strstr(GUIElement, "INFOBK"))		intMode = COLOR_INFOBK;
 	else if (strstr(GUIElement, "INFOTEXT"))	intMode = COLOR_INFOTEXT;
 	int color = GetSysColor(intMode);
-	return ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);;
+#ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
+	return color;
 }
 
 void JS_GDI_SetTextBkMode(void* deviceHDC, int mode)
@@ -1721,20 +2005,27 @@ void JS_GDI_SetTextBkMode(void* deviceHDC, int mode)
 
 void JS_GDI_SetTextBkColor(void* deviceHDC, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetBkColor((HDC)deviceHDC, color);
 }
 
 void JS_GDI_SetTextColor(void* deviceHDC, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetTextColor((HDC)deviceHDC, color);
 }
 
 int JS_GDI_GetTextColor(void* deviceHDC)
 {
 	int color = GetTextColor((HDC)deviceHDC);
-	return ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
+	return color;
 }
 
 int JS_GDI_DrawText(void* deviceHDC, const char *text, int len, int left, int top, int right, int bottom, const char* align)
@@ -1761,7 +2052,9 @@ int JS_GDI_DrawText(void* deviceHDC, const char *text, int len, int left, int to
 
 void JS_GDI_SetPixel(void* deviceHDC, int x, int y, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetPixel((HDC)deviceHDC, x, y, color);
 }
 
@@ -2082,29 +2375,6 @@ HWND JS_Window_AttachTopmostPin(HWND windowHWND)
 void JS_Window_AttachResizeGrip(void* windowHWND)
 {
 	AttachWindowResizeGrip((HWND)windowHWND);
-}
-
-
-////////////////////////////////////////////////////////////
-
-void* JS_PtrFromStr(const char* s)
-{
-	return (void*)s;
-}
-
-void JS_Int(void* address, int offset, int* intOut)
-{
-	*intOut = ((int32_t*)address)[offset];
-}
-
-void JS_Byte(void* address, int offset, int* byteOut)
-{
-	*byteOut = (int)(((int8_t*)address)[offset]);
-}
-
-void JS_Double(void* address, int offset, double* doubleOut)
-{
-	*doubleOut = ((double*)address)[offset];
 }
 
 

@@ -17,6 +17,47 @@ static void* __vararg_JS_Localize(void** arglist, int numparms)
 	return NULL;
 }
 
+////////////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_Mem_Alloc(void** arglist, int numparms)
+{
+	return JS_Mem_Alloc((int)(intptr_t)arglist[0]);
+}
+
+static void* __vararg_JS_Mem_Free(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Mem_Free(arglist[0]);
+}
+
+static void* __vararg_JS_Mem_FromString(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Mem_FromString(arglist[0], (int)(intptr_t)arglist[1], (const char*)arglist[2], (int)(intptr_t)arglist[3]);
+}
+
+static void* __vararg_JS_String(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_String(arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (char*)arglist[3], (int)(intptr_t)arglist[4]);
+}
+
+static void* __vararg_JS_Int(void** arglist, int numparms)
+{
+	JS_Int(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
+	return NULL;
+}
+
+static void* __vararg_JS_Byte(void** arglist, int numparms)
+{
+	JS_Byte(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
+	return NULL;
+}
+
+static void* __vararg_JS_Double(void** arglist, int numparms)
+{
+	JS_Double(arglist[0], (int)(INT_PTR)arglist[1], (double*)arglist[2]);
+	return NULL;
+}
+
+
 ///////////////////////////////////////////////////////////////////////////
 
 static void* __vararg_JS_Dialog_BrowseForSaveFile(void** arglist, int numparms)
@@ -56,6 +97,17 @@ static void* __vararg_JS_Window_ClientToScreen(void** arglist, int numparms)
 static void* __vararg_JS_Window_GetClientRect(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_Window_GetClientRect((void*)arglist[0], (int*)arglist[1], (int*)arglist[2], (int*)arglist[3], (int*)arglist[4]);
+}
+
+static void* __vararg_JS_Window_GetClientSize(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Window_GetClientSize((void*)arglist[0], (int*)arglist[1], (int*)arglist[2]);
+}
+
+static void* __vararg_JS_Window_MonitorFromRect(void** arglist, int numparms)
+{
+	JS_Window_MonitorFromRect((int)(intptr_t)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (bool)arglist[4], (int*)arglist[5], (int*)arglist[6], (int*)arglist[7], (int*)arglist[8]);
+	return nullptr;
 }
 
 static void* __vararg_JS_Window_FromPoint(void** arglist, int numparms)
@@ -218,6 +270,12 @@ static void* __vararg_JS_Window_SetZOrder(void** arglist, int numparms)
 static void* __vararg_JS_Window_GetLongPtr(void** arglist, int numparms)
 {
 	return JS_Window_GetLongPtr((void*)arglist[0], (const char*)arglist[1]);
+}
+
+static void* __vararg_JS_Window_GetLong(void** arglist, int numparms)
+{
+	JS_Window_GetLong((void*)arglist[0], (const char*)arglist[1], (double*)arglist[2]);
+	return nullptr;
 }
 
 static void* __vararg_JS_Window_SetOpacity(void** arglist, int numparms)
@@ -717,32 +775,6 @@ static void* __vararg_JS_Window_AttachResizeGrip(void** arglist, int numparms)
 
 //////////////////////////////////////////////////////////////
 
-
-
-static void* __vararg_JS_Int(void** arglist, int numparms)
-{
-	JS_Int(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
-	return NULL;
-}
-
-static void* __vararg_JS_Byte(void** arglist, int numparms)
-{
-	JS_Byte(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
-	return NULL;
-}
-
-static void* __vararg_JS_Double(void** arglist, int numparms)
-{
-	JS_Double(arglist[0], (int)(INT_PTR)arglist[1], (double*)arglist[2]);
-	return NULL;
-}
-
-static void* __vararg_JS_PtrFromStr(void** arglist, int numparms)
-{
-	return JS_PtrFromStr((const char*)arglist[0]);
-}
-
-//////////////////////////////////////////////////////////////////////
 
 static void* __vararg_JS_ListView_GetItemCount(void** arglist, int numparms)
 {
