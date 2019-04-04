@@ -2625,5 +2625,121 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 	return block.samples_out;
 }
 
+class PreviewEntry
+{
+public:
+	preview_register_t m_preg;
+	int m_id = -1;
+};
+
+class PCMSourcePlayerManager;
+PCMSourcePlayerManager* g_sourcepreviewman = nullptr;
+
+class PCMSourcePlayerManager
+{
+public:
+	PCMSourcePlayerManager()
+	{
+		m_previews.reserve(16);
+		m_timer_id = SetTimer(NULL, 3000000, 1000, MyTimerproc);
+	}
+	~PCMSourcePlayerManager()
+	{
+		KillTimer(NULL, m_timer_id);
+	}
+	int startPreview(PCM_source* src, double gain, bool loop)
+	{
+		PreviewEntry entry;
+		memset(&entry.m_preg, 0, sizeof(preview_register_t));
+		InitializeCriticalSection(&entry.m_preg.cs);
+		entry.m_preg.volume = gain;
+		entry.m_preg.loop = loop;
+		entry.m_preg.src = src->Duplicate();
+		if (entry.m_preg.src)
+		{
+			m_previews.push_back(entry);
+			PlayPreview(&m_previews.back().m_preg);
+			++m_preview_id_count;
+			m_previews.back().m_id = m_preview_id_count;
+			return m_preview_id_count;
+		}
+		return 0;
+	}
+	void stopPreview(int preview_id)
+	{
+		if (preview_id > 0)
+		{
+			for (int i = 0; i < m_previews.size(); ++i)
+			{
+				if (m_previews[i].m_id == preview_id)
+				{
+					StopPreview(&m_previews[i].m_preg);
+					DeleteCriticalSection(&m_previews[i].m_preg.cs);
+					delete m_previews[i].m_preg.src;
+					m_previews.erase(m_previews.begin() + i);
+					break;
+				}
+			}
+		}
+		if (preview_id == -1)
+		{
+			for (int i = 0; i < m_previews.size(); ++i)
+			{
+				StopPreview(&m_previews[i].m_preg);
+				DeleteCriticalSection(&m_previews[i].m_preg.cs);
+				delete m_previews[i].m_preg.src;
+			}
+			m_previews.clear();
+		}
+	}
+	void stopPreviewsIfAtEnd()
+	{
+		for (int i = m_previews.size()-1; i>=0; --i)
+		{
+			if (m_previews[i].m_preg.curpos >= m_previews[i].m_preg.src->GetLength())
+			{
+				//char buf[100];
+				//sprintf(buf, "Stopping preview %d\n", m_previews[i].m_id);
+				//ShowConsoleMsg(buf);
+				StopPreview(&m_previews[i].m_preg);
+				DeleteCriticalSection(&m_previews[i].m_preg.cs);
+				delete m_previews[i].m_preg.src;
+				m_previews.erase(m_previews.begin() + i);
+			}
+		}
+	}
+private:
+	static void MyTimerproc(
+		HWND Arg1,
+		UINT Arg2,
+		UINT_PTR Arg3,
+		DWORD Arg4
+	)
+	{
+		//ShowConsoleMsg("timer...");
+		if (g_sourcepreviewman)
+			g_sourcepreviewman->stopPreviewsIfAtEnd();
+	}
+	std::vector<PreviewEntry> m_previews;
+	int m_preview_id_count = 0;
+	UINT_PTR m_timer_id = 0;
+};
+
+
+
+int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop)
+{
+	if (g_sourcepreviewman == nullptr)
+		g_sourcepreviewman = new PCMSourcePlayerManager;
+	return (int)g_sourcepreviewman->startPreview(src, gain, loop);
+}
+
+int Xen_StopSourcePreview(int preview_id)
+{
+	if (g_sourcepreviewman != nullptr)
+		g_sourcepreviewman->stopPreview(preview_id);
+	return 0;
+}
+
 ////////////////////////////////////////////////////////////////
 
