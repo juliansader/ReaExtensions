@@ -254,6 +254,7 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(Xen_AudioWriter_Destroy), "void", "AudioWriter*", "writer", "Destroys writer", },
 	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*,int", "writer,numframes,data,offset", "Write interleaved audio data to disk", },
 	{ APIFUNC(Xen_GetMediaSourceSamples), "int", "PCM_source*,void*,int,int,int,double,double", "src,destbuf,destbufoffset,numframes,numchans,samplerate,sourceposition", "Get interleaved audio data from media source", }
+	
 };
 
 ///////////////////////////////////////////////////////////////////////////////

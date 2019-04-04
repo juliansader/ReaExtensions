@@ -820,3 +820,4 @@ static void* __vararg_Xen_GetMediaSourceSamples(void** arglist, int numparms)
 		(int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], *(double*)arglist[5], *(double*)arglist[6]);
 	return (void*)(INT_PTR)result;
 }
+
