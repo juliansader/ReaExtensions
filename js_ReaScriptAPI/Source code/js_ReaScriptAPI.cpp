@@ -2696,15 +2696,21 @@ public:
 	{
 		for (int i = m_previews.size()-1; i>=0; --i)
 		{
+			//EnterCriticalSection(&m_previews[i].m_preg.cs);
 			if (m_previews[i].m_preg.curpos >= m_previews[i].m_preg.src->GetLength())
 			{
-				//char buf[100];
-				//sprintf(buf, "Stopping preview %d\n", m_previews[i].m_id);
-				//ShowConsoleMsg(buf);
+				char buf[100];
+				sprintf(buf, "Stopping preview %d\n", m_previews[i].m_id);
+				ShowConsoleMsg(buf);
 				StopPreview(&m_previews[i].m_preg);
+				//LeaveCriticalSection(&m_previews[i].m_preg.cs);
 				DeleteCriticalSection(&m_previews[i].m_preg.cs);
 				delete m_previews[i].m_preg.src;
 				m_previews.erase(m_previews.begin() + i);
+			}
+			else
+			{
+				//LeaveCriticalSection(&m_previews[i].m_preg.cs);
 			}
 		}
 	}
