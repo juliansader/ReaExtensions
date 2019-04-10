@@ -2,7 +2,6 @@
 
 using namespace std;
 
-
 // This function is called when REAPER loads or unloads the extension.
 // If rec !- nil, the extenstion is being loaded.  If rec == nil, the extension is being UNloaded.
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t *rec)
@@ -13,33 +12,37 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		//		Load all listed API functions at once.
 		if (REAPERAPI_LoadAPI(rec->GetFunc) != 0)
 		{
-			fprintf(stderr, "Unable to import API functions.\n");
+			// This is the WIN32 / swell MessageBox, not REAPER's API MB.  This should create a separate window that is listed in the taskbar,
+			//		and more easily visible behind REAPER's splash screen.
+			MessageBox(NULL, "Unable to import default API functions.\n\nNOTE:\nThis extension requires REAPER v5.965 or later.", "ERROR: js_ReaScriptAPI extension", 0);  //fprintf(stderr, "Unable to import API functions.\n");
 			return 0;
 		}
 		//		Load each of the undocumented functions.
 		if (!((*(void **)&CoolSB_GetScrollInfo) = (void *)rec->GetFunc("CoolSB_GetScrollInfo")))
 		{
-			MB("Unable to import CoolSB_GetScrollInfo function.", "ERROR: ReaScriptAPI extension", 0);
+			MessageBox(NULL, "Unable to import CoolSB_GetScrollInfo function.", "ERROR: js_ReaScriptAPI extension", 0);
 			return 0;
 		}
 		if (!((*(void **)&AttachWindowTopmostButton) = (void *)rec->GetFunc("AttachWindowTopmostButton")))
 		{
-			MB("Unable to import AttachWindowTopmostButton function.", "ERROR: ReaScriptAPI extension", 0);
+			MessageBox(NULL, "Unable to import AttachWindowTopmostButton function.", "ERROR: js_ReaScriptAPI extension", 0);
 			return 0;
 		}
 		if (!((*(void **)&AttachWindowResizeGrip) = (void *)rec->GetFunc("AttachWindowResizeGrip")))
 		{
-			MB("Unable to import AttachWindowResizeGrip function.", "ERROR: ReaScriptAPI extension", 0);
+			MessageBox(NULL, "Unable to import AttachWindowResizeGrip function.", "ERROR: js_ReaScriptAPI extension", 0);
 			return 0;
 		}
 		if (!((*(void **)&CoolSB_SetScrollPos) = (void *)rec->GetFunc("CoolSB_SetScrollPos")))
 		{
-			MB("Unable to import CoolSB_SetScrollPos function.", "ERROR: ReaScriptAPI extension", 0);
+			MessageBox(NULL, "Unable to import CoolSB_SetScrollPos function.", "ERROR: js_ReaScriptAPI extension", 0);
 			return 0;
 		}
 
-		// Functions imported, continue initing plugin...
-		// Second, export this extension's functions to ReaScript API.
+		// Don't know what this does, but apparently it's necessary for the localization functions.
+		IMPORT_LOCALIZE_RPLUG(rec);
+
+		// Functions imported, continue initing plugin by exporting this extension's functions to ReaScript API.
 
 		// Each function's defstring will temporarily be contructed in temp[]
 		char temp[10000];
@@ -62,29 +65,385 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			// APIvarag_... for exporting to ReaScript API
 			plugin_register(f.regkey_vararg, f.func_vararg);
 		}
+
+		// Construct mapMsgToWM_ as inverse of mapWM_ToMsg
+		for (auto& i : Julian::mapWM_toMsg)
+			Julian::mapMsgToWM_.emplace(i.second, i.first);
+
 		return 1; // success
 	}
+	// Does an extension need to do anything when unloading?  
+	// To prevent memort leaks, perhaps try to delete any stuff that may remain in memory?
+	// On Windows, LICE bitmaps are automatically destroyed when REAPER quits, but to make extra sure, this function will destroy them explicitly.
 	else
+		for (LICE_IBitmap* bm : Julian::LICEBitmaps)
+			LICE__Destroy(bm);
+		for (auto& p : Julian::mapMallocToSize)
+			free(p.first);
 		return 0;
 }
 
-
+/*
+v0.963:
+ * Fix bug in Find functions in macOS.
+ * New optional bool parameter for Mouse_LoadCursorFromFile. If not true, function will try to re-use previously loaded cursor.
+ * Window_FindEx function.
+v0.964:
+ * Implement IsWindow for Linux and macOS.
+v0.970
+ * Linux and macOS: Improved IsWindow.
+ * Windows OS: File dialogs accept forward slash.
+ * Windows OS: BrowseForOpenFiles returns folder with terminal slash.
+ * New functions: Memory allocation and access.
+ * WindowMessage functions: Recognize ComboBox message names such as "CB_GETCURSEL".
+v0.971
+ * Fix possible memory leak in File dialogs.
+v0.972
+ * macOS: Fixed GetClientRect.
+ * WindowsOS: Confirmation dialogs for BrowseForSaveFile and BrowseForOpenFiles.
+ * New function: MonitorFromRect
+ * GDI: Linux and macOS use same color format as Windows.
+*/
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.95;
+	*versionOut = 0.972;
 }
+
+void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
+{
+	const char* trans = __localizeFunc(USEnglish, LangPackSection, 0);
+	// Why not use NeedBig in this function?  Because seldom necessary, and I want to inform users about the "trick" to customize buffer size.
+	/*
+	size_t transLen = strlen(trans);
+	bool reallocOK = false;
+	if (realloc_cmd_ptr(&translationOutNeedBig, &translationOutNeedBig_sz, transLen))
+	if (translationOutNeedBig && translationOutNeedBig_sz == transLen)
+	reallocOK = true;
+	if (reallocOK)
+	memcpy(translationOutNeedBig, trans, transLen);
+	else if (translationOutNeedBig && translationOutNeedBig_sz > 0)
+	translationOutNeedBig[0] = 0;
+	return;
+	*/
+	strncpy(translationOut, trans, translationOut_sz);
+	translationOut[translationOut_sz - 1] = 0;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+void* JS_Mem_Alloc(int sizeBytes)
+{
+	using namespace Julian;
+	void* ptr = nullptr;
+	if (sizeBytes > 0) {
+		ptr = malloc(sizeBytes);
+		if (ptr) {
+			mapMallocToSize.emplace(ptr, sizeBytes);
+		}
+	}
+	return ptr;
+}
+
+bool JS_Mem_Free(void* mallocPointer)
+{
+	using namespace Julian;
+	if (mapMallocToSize.count(mallocPointer))
+	{
+		free(mallocPointer);
+		mapMallocToSize.erase(mallocPointer);
+		return true;
+	}
+	else
+		return false;
+}
+
+bool JS_Mem_FromString(void* mallocPointer, int offset, const char* packedString, int stringLength)
+{
+	using namespace Julian;
+	if (mapMallocToSize.count(mallocPointer) && offset >= 0) {
+		if (mapMallocToSize[mallocPointer] >= offset + stringLength)	{
+			memcpy((char*)mallocPointer+offset, packedString, stringLength);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool JS_String(void* pointer, int offset, int lengthChars, char* bufOutNeedBig, int bufOutNeedBig_sz)
+{
+	int len = lengthChars < 0 ? 0 : lengthChars;
+	if (realloc_cmd_ptr(&bufOutNeedBig, &bufOutNeedBig_sz, len)) {
+		if (bufOutNeedBig_sz == len) {
+			memcpy(bufOutNeedBig, (char*)pointer+offset, len);
+			return true;
+		}
+	}
+	return false;
+}
+
+void JS_Int(void* pointer, int offset, int* intOut)
+{
+	*intOut = ((int32_t*)pointer)[offset];
+}
+
+void JS_Byte(void* pointer, int offset, int* byteOut)
+{
+	*byteOut = (int)(((int8_t*)pointer)[offset]);
+}
+
+void JS_Double(void* pointer, int offset, double* doubleOut)
+{
+	*doubleOut = ((double*)pointer)[offset];
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+
+
+int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz)
+{			
+	// NeedBig buffers should be 2^15 chars by default
+	if (fileNameOutNeedBig_sz < 16000) return -1;
+
+	// Set default extension and filter
+	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
+
+#ifdef _WIN32
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	char* newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -2;
+
+	for (size_t i = 0; i < folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
+	strncpy(fileNameOutNeedBig, initialFile, fileNameOutNeedBig_sz);
+	fileNameOutNeedBig[fileNameOutNeedBig_sz - 1] = 0;
+
+	OPENFILENAME info{
+		sizeof(OPENFILENAME),	//DWORD         lStructSize;
+		NULL,					//HWND          hwndOwner;
+		NULL,					//HINSTANCE     hInstance;
+		newExtList,				//----LPCSTR lpstrFilter;
+		NULL,					//LPSTR         lpstrCustomFilter;
+		NULL,					//DWORD         nMaxCustFilter;
+		0,						//DWORD         nFilterIndex;
+		fileNameOutNeedBig,			//LPSTR         lpstrFile;
+		(DWORD)fileNameOutNeedBig_sz,	//DWORD         nMaxFile;
+		NULL,					//LPSTR         lpstrFileTitle;
+		0,						//DWORD         nMaxFileTitle;
+		newInitFolder,				//LPCSTR        lpstrInitialDir;
+		windowTitle,			//LPCSTR        lpstrTitle;
+		OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT, //DWORD         Flags; -- 
+		0,						//WORD          nFileOffset;
+		0,						//WORD          nFileExtension;
+		NULL,					//LPCSTR        lpstrDefExt;
+		NULL,					//LPARAM        lCustData;
+		NULL,					//LPOFNHOOKPROC lpfnHook;
+		NULL,					//LPCSTR        lpTemplateName;
+		NULL,					//void          *pvReserved;
+		NULL,					//DWORD         dwReserved;
+		0						//DWORD         FlagsEx;
+	};
+	BOOL gotFile = GetSaveFileName(&info);
+	free(newInitFolder);
+#else
+	// returns TRUE if file was chosen. 
+	BOOL gotFile = (BOOL)BrowseForSaveFile(windowTitle, initialFolder, initialFile, newExtList, fileNameOutNeedBig, fileNameOutNeedBig_sz);
+#endif
+	if(!gotFile)
+		fileNameOutNeedBig[0] = '\0';
+	return gotFile;
+}
+
+int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, bool allowMultiple, char* fileNamesOutNeedBig, int fileNamesOutNeedBig_sz)
+{
+	// Set default extension and filter
+	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
+
+	// GetOpenFileName returns the required buffer length in a mere 2 bytes, so a beffer size of 1024*1024 should be more than enough.
+	constexpr uint32_t LONGLEN = 1024 * 1024;
+
+	// If buffer is succesfully created, this will not be NULL anymore, and must be freed.
+	char* fileNames = nullptr;
+	char* newInitFolder = nullptr;
+
+	// Default retval is -1.  Will only become true once all the steps are completed succesfully.
+	int retval = -1;
+
+#ifdef _WIN32
+	char slash = '\\';
+
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i < folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
+	// The potentially very long return string will be stored in here
+	fileNames = (char*)malloc(LONGLEN);
+	if (fileNames) {
+		strncpy(fileNames, initialFile, LONGLEN);
+		fileNames[LONGLEN - 1] = 0;
+
+		DWORD flags = allowMultiple ? (OFN_EXPLORER | OFN_LONGNAMES | OFN_PATHMUSTEXIST | OFN_CREATEPROMPT | OFN_ALLOWMULTISELECT)
+			: (OFN_EXPLORER | OFN_LONGNAMES | OFN_CREATEPROMPT | OFN_PATHMUSTEXIST);
+
+		OPENFILENAME info{
+			sizeof(OPENFILENAME),	//DWORD         lStructSize;
+			NULL,					//HWND          hwndOwner;
+			NULL,					//HINSTANCE     hInstance;
+			newExtList,				//----LPCSTR lpstrFilter;
+			NULL,					//LPSTR         lpstrCustomFilter;
+			NULL,					//DWORD         nMaxCustFilter;
+			0,						//DWORD         nFilterIndex;
+			fileNames,				//LPSTR         lpstrFile;
+			LONGLEN,				//DWORD         nMaxFile;
+			NULL,					//LPSTR         lpstrFileTitle;
+			0,						//DWORD         nMaxFileTitle;
+			newInitFolder,			//LPCSTR        lpstrInitialDir;
+			windowTitle,			//LPCSTR        lpstrTitle;
+			flags,					//DWORD         Flags; -- 
+			0,						//WORD          nFileOffset;
+			0,						//WORD          nFileExtension;
+			NULL,					//LPCSTR        lpstrDefExt;
+			NULL,					//LPARAM        lCustData;
+			NULL,					//LPOFNHOOKPROC lpfnHook;
+			NULL,					//LPCSTR        lpTemplateName;
+			NULL,					//void          *pvReserved;
+			NULL,					//DWORD         dwReserved;
+			0						//DWORD         FlagsEx;
+		};
+		retval = (GetOpenFileName(&info) ? -1 : 0); // If return value is TRUE, retval remains -1 
+#else
+	// free() the result of this, if non-NULL.
+	// if allowmul is set, the multiple files are specified the same way GetOpenFileName() returns.
+	char slash = '/';
+	fileNames = BrowseForFiles(windowTitle, initialFolder, initialFile, allowMultiple, newExtList);
+	retval = (fileNames ? -1 : 0);
+	{
+#endif
+		if (retval) {
+			// If allowMulti, filenames will be 0-separated, and entire string will end in a double \0\0.
+			size_t totalLen = strlen(fileNames);
+			size_t firstLen = totalLen;
+			bool addSlash = false;
+			if (allowMultiple) {
+				for (; totalLen < LONGLEN; totalLen++) {
+					if (fileNames[totalLen] == 0 && fileNames[totalLen + 1] == 0)
+						break;
+				}
+			}
+			if (totalLen > 0) {
+				// WDL/swell returns folder substring with terminal slash, but Windows doesn't.
+				// For consistency, add terminal slash.  (Terminal slash also makes it easier to concatenate folder string with file strings.)
+				// Check if folder substring ended with slash:
+				// (Remember to skip empty folder strings, which may be returned on macOS.)
+				if (firstLen > 0 && firstLen < totalLen && !(fileNames[firstLen - 1] == slash)) {
+					addSlash = true;
+					totalLen = totalLen + 1;
+				}
+
+				if (totalLen < LONGLEN) {
+					if (realloc_cmd_ptr(&fileNamesOutNeedBig, &fileNamesOutNeedBig_sz, (int)totalLen)) {
+						if (fileNamesOutNeedBig && fileNamesOutNeedBig_sz == totalLen) {
+							if (addSlash) {
+								memcpy(fileNamesOutNeedBig, fileNames, firstLen);
+								fileNamesOutNeedBig[firstLen] = slash;
+								memcpy(fileNamesOutNeedBig+firstLen+1, fileNames+firstLen, totalLen-1-firstLen);
+							}
+							else {
+								memcpy(fileNamesOutNeedBig, fileNames, totalLen);
+							}
+							retval = TRUE;
+						}
+					}
+				}
+			}
+		}
+	}
+	if (newInitFolder) free(newInitFolder);
+	if (fileNames) free(fileNames);
+	return retval;
+}
+
+
+// Browsing for folders is quite a mess in WIN32 (compared to swell).
+// Must use this weird callback function merely to set initial folder.
+#ifdef _WIN32
+INT CALLBACK BrowseForFolder_CallBack(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM pData)
+{
+	if (uMsg == BFFM_INITIALIZED)
+	{
+		string initialDir = (const char*)pData;
+		SendMessage(hwnd, BFFM_SETSELECTION, TRUE, pData);
+	}
+	return 0;
+}
+#endif
+
+int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, char* folderOutNeedBig, int folderOutNeedBig_sz)
+{
+	if (folderOutNeedBig_sz < 32000) return -1;
+
+#ifdef _WIN32
+	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
+	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
+	char* newInitFolder = (char*)malloc(folderLen);
+	if (!newInitFolder) return -1;
+
+	for (size_t i = 0; i < folderLen; i++)
+		newInitFolder[i] = (initialFolder[i] == '/') ? '\\' : initialFolder[i];
+
+	_browseinfoA info{
+		NULL,					//HWND        hwndOwner;
+		NULL,					//PCIDLIST_ABSOLUTE pidlRoot;
+		folderOutNeedBig,		//pszDisplayName;       // Return display name of item selected.
+		caption,				//LPCSTR       lpszTitle; // text to go in the banner over the tree.
+		BIF_NEWDIALOGSTYLE | BIF_BROWSEINCLUDEURLS | BIF_RETURNONLYFSDIRS , //UINT         ulFlags;                       // Flags that control the return stuff
+		BrowseForFolder_CallBack,		//BFFCALLBACK  lpfn;
+		(LPARAM)newInitFolder,	//LPARAM       lParam;	// extra info that's passed back in callbacks
+		0						//int          iImage;	// output var: where to return the Image index.
+	};
+
+	PIDLIST_ABSOLUTE folderID = SHBrowseForFolder(&info);
+	if (folderID)
+		SHGetPathFromIDList(folderID, folderOutNeedBig);
+	ILFree(folderID);
+	free(newInitFolder);
+
+	return (BOOL)!!folderID;
+
+#else
+	// returns TRUE if path was chosen.
+	return BrowseForDirectory(caption, initialFolder, folderOutNeedBig, folderOutNeedBig_sz);
+#endif
+}
+
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
 {
-	HWND hwnd = (HWND)windowHWND;
 	RECT r{ 0, 0, 0, 0 };
-	bool isOK = !!GetWindowRect(hwnd, &r);
+	bool isOK = !!GetWindowRect((HWND)windowHWND, &r);
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut	   = (int)r.bottom;
+		*bottomOut = (int)r.top;			
+	}
+	else {
+		*topOut	   = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
 	*leftOut   = (int)r.left;
 	*rightOut  = (int)r.right;
-	*topOut	   = (int)r.top;
-	*bottomOut = (int)r.bottom;
+
 	return (isOK);
 }
 
@@ -92,8 +451,7 @@ void JS_Window_ScreenToClient(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
-	HWND hwnd = (HWND)windowHWND;
-	ScreenToClient(hwnd, &p);
+	ScreenToClient((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
 }
@@ -102,8 +460,7 @@ void JS_Window_ClientToScreen(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
-	HWND hwnd = (HWND)windowHWND;
-	ClientToScreen(hwnd, &p);
+	ClientToScreen((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
 }
@@ -121,36 +478,68 @@ bool JS_Window_GetClientRect(void* windowHWND, int* leftOut, int* topOut, int* r
 	GetClientRect(hwnd, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
-	if (isOK)
-	{
+	if (isOK) {
 		POINT p{ 0, 0 };
 		ClientToScreen(hwnd, &p);
 		*leftOut = (int)p.x;
-		*rightOut = (int)p.x + (int)r.right;
 		*topOut = (int)p.y;
+		*rightOut = (int)p.x + (int)r.right;
+#ifdef __APPLE__
+		*bottomOut = (int)p.y - (int)r.bottom; // macOS uses coordinates from bottom, so r.bottom must be smaller than r.top
+#else
 		*bottomOut = (int)p.y + (int)r.bottom;
+#endif
 	}
 	return (isOK);
 }
 
-
-/*
-bool JS_Window_GetClientRect(void* windowHWND, int* widthOut, int* heightOut)
+bool JS_Window_GetClientSize(void* windowHWND, int* widthOut, int* heightOut)
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	// However, if hwnd is not a true hwnd, SWELL will return a {0,0,0,0} rect.
-	RECT r;
+	RECT r{ 0, 0, 0, 0 };
 #ifdef _WIN32
 	bool isOK = !!GetClientRect((HWND)windowHWND, &r);
 #else
 	GetClientRect((HWND)windowHWND, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
-	*widthOut = r.right;
-	*heightOut = r.bottom;
+	r.right = (r.right >= 0) ? (r.right) : (-(r.right));
+	r.bottom = (r.bottom >= 0) ? (r.bottom) : (-(r.bottom));
+	*widthOut = (int)r.right;
+	*heightOut = (int)r.bottom;
 	return (isOK);
 }
-*/
+
+void JS_Window_MonitorFromRect(int x1, int y1, int x2, int y2, bool wantWork, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
+{
+	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
+	RECT s{ x1, y1, x2, y2 };
+#ifdef _WIN32
+	HMONITOR m = MonitorFromRect(&s, MONITOR_DEFAULTTOPRIMARY);
+	MONITORINFO i{ sizeof(MONITORINFO), };
+	GetMonitorInfo(m, &i);
+	RECT& r = wantWork ? i.rcWork : i.rcMonitor;
+#else
+	RECT r{ 0,0,0,0 };
+	SWELL_GetViewPort(&r, &s, wantWork);
+#endif
+	
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut	   = (int)r.bottom;
+		*bottomOut = (int)r.top;			
+	}
+	else {
+		*topOut	   = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
+	*leftOut = (int)r.left;
+	*rightOut = (int)r.right;
+}
 
 void* JS_Window_FromPoint(int x, int y)
 {
@@ -275,6 +664,7 @@ void  JS_Window_ReleaseCapture()
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 {
 	int intMode;
+
 #ifdef _WIN32
 	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
 	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
@@ -282,7 +672,7 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
 	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
 	else return nullptr;
-
+	
 	return (void*)GetWindowLongPtr((HWND)windowHWND, intMode);
 
 #else 
@@ -298,26 +688,128 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 #endif
 }
 
+void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
+{
+	int intMode;
+
+#ifdef _WIN32
+	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else {*retvalOut = 0; return;}
+
+	*retvalOut = (double)GetWindowLongPtr((HWND)windowHWND, intMode);
+
+#else 
+	if (strstr(info, "USER"))			intMode = GWL_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWL_WNDPROC;
+	else if (strstr(info, "DLG"))		intMode = DWL_DLGPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else {*retvalOut = 0; return;}
+
+	*retvalOut = (double)GetWindowLong((HWND)windowHWND, intMode);
+#endif
+}
+
+
 HWND JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title)
 {
 	// REAPER API cannot pass null pointers, so must do another way:
 	HWND		c = ((parentHWND == childHWND) ? nullptr : childHWND);
-	const char* t = ((strlen(title) == 0)	   ? nullptr : title);
+	const char* t = ((strlen(title) == 0) ? nullptr : title);
 	return FindWindowEx(parentHWND, c, className, t);
 }
 
 
+HWND JS_Window_FindChildByID(HWND parent, int ID)
+{
+	return GetDlgItem(parent, ID);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// All the ArrayFind functions use the same code to convert a std::set<HWND> to an array,
+//		so instead of repeating the code in every function, they call this helper function:
+int ConvertSetHWNDToArray(std::set<HWND>& foundHWNDs, double* reaperarray)
+{
+	// Is space available in the reaper.array?
+	uint32_t& currentArraySize = ((uint32_t*)reaperarray)[0];
+	uint32_t& maximumArraySize = ((uint32_t*)reaperarray)[1];
+	if (maximumArraySize < (4 * 1024 * 1024) && currentArraySize + foundHWNDs.size() <= maximumArraySize) { // Sanity check: 4*1024*1024-1 is the maximum size of reaper.arrays
+		// Space is available, so copy HWNDs into array
+		for (const HWND& hwnd : foundHWNDs) {
+			reaperarray[currentArraySize + 1] = (double)((intptr_t)hwnd);
+			currentArraySize++;
+		}
+		return (int)foundHWNDs.size();
+	}
+	else
+		return -(int)foundHWNDs.size();
+}
+
+// All the ListFind functions use the same code to convert a std::set<HWND> to a string,
+//		so instead of repeating the code in every function, they call this helper function:
+int ConvertSetHWNDToString(std::set<HWND>& foundHWNDs, char*& reaperBufNeedBig, int& reaperBufNeedBig_sz)
+{
+	using namespace Julian;
+
+	// By default, the function will return an error and 0-length string. Only if everything goes well, will retval be flipped positive.
+	int retval = -(int)foundHWNDs.size();
+	reaperBufNeedBig[0] = 0;
+
+	// If windows have been found, convert foundHWNDs into a comma-separated string.
+	if (retval) {
+		// REAPER's realloc_cmd_ptr deletes the contents of the previous buffer,
+		//		so must first print into a large, temporary buffer to determine the exact length of the list string,
+		//		then call realloc_cmd_ptr once and copy the string to itemsOutNeedBig. 
+		char* itemBuf = (char*)malloc(foundHWNDs.size() * MAX_CHARS_PER_HWND); // This buffer is large enough to hold entire list string.
+		if (itemBuf) {
+			int totalLen = 0;  // Total length of list of items (minus terminating \0)
+			int tempLen = 0;  // Length of last item printed
+			for (const HWND& hwnd : foundHWNDs) {
+				tempLen = snprintf(itemBuf + totalLen, MAX_CHARS_PER_HWND, "0x%llX,", (unsigned long long int)hwnd); // As long as < MAX_CHARS, there will not be buffer overflow.
+				if (tempLen < 4 || tempLen > MAX_CHARS_PER_HWND) { // Whoops, something went wrong. 
+					totalLen = 0;
+					break;
+				}
+				else
+					totalLen += tempLen;
+			}
+			if (totalLen) {
+				totalLen--; // If any numbers were printed, remove final comma
+							// Copy exact number of printed characters to itemsOut buffer 
+				if (realloc_cmd_ptr(&reaperBufNeedBig, &reaperBufNeedBig_sz, totalLen)) {	// Was realloc successful?
+					if (reaperBufNeedBig && reaperBufNeedBig_sz == totalLen) {	// Was realloc really successful?
+						memcpy(reaperBufNeedBig, itemBuf, totalLen);
+						retval = -retval; // Finally, retval gets an OK value
+					}
+				}
+			}
+			free(itemBuf);
+		}
+	}
+	return retval;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
 BOOL CALLBACK JS_Window_Find_Callback_Child(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	int len = GetWindowText(hwnd, s->temp, s->tempLen);
-	s->temp[s->tempLen - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-	for (int i = 0; (s->temp[i] != '\0') && (i < len); i++) s->temp[i] = (char)tolower(s->temp[i]); // FindWindow is case-insensitive, so this implementation is too
-	if (     (s->exact  && (strcmp(s->temp, s->target) == 0)    )
-		|| (!(s->exact) && (strstr(s->temp, s->target) != NULL)))
+	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
+	s.temp[s.tempLen - 1] = '\0'; // Make sure that loooong titles are properly terminated.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
+	if (     (s.exact  && (strcmp(s.temp, s.target) == 0)    )
+		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
 	{
-		s->hwnd = hwnd;
+		s.foundHWNDs->insert(hwnd);
 		return FALSE;
 	}
 	else
@@ -327,20 +819,21 @@ BOOL CALLBACK JS_Window_Find_Callback_Child(HWND hwnd, LPARAM structPtr)
 BOOL CALLBACK JS_Window_Find_Callback_Top(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	int len = GetWindowText(hwnd, s->temp, s->tempLen);
-	s->temp[s->tempLen-1] = '\0'; // Make sure that loooong titles are properly terminated.
-	for (int i = 0; (s->temp[i] != '\0') && (i < len); i++) s->temp[i] = (char)tolower(s->temp[i]); // FindWindow is case-insensitive, so this implementation is too
-	if (     (s->exact  && (strcmp(s->temp, s->target) == 0)    )
-		|| (!(s->exact) && (strstr(s->temp, s->target) != NULL)))
+	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length
+	s.temp[s.tempLen-1] = '\0'; // Make sure that loooong titles are properly terminated.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
+	if (     (s.exact  && (strcmp(s.temp, s.target) == 0)    )
+		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
 	{
-		s->hwnd = hwnd;
+		s.foundHWNDs->insert(hwnd);
 		return FALSE;
 	}
 	else
 	{
 		EnumChildWindows(hwnd, JS_Window_Find_Callback_Child, structPtr);
-		if (s->hwnd != NULL) return FALSE;
+		if (s.foundHWNDs->size()) return FALSE;
 		else return TRUE;
 	}
 }
@@ -362,121 +855,29 @@ void* JS_Window_Find(const char* title, bool exact)
 	titleLower[i] = '\0';
 
 	// To communicate with callback functions, use an sEnumWindows:
+	std::set<HWND> foundHWNDs;
 	char temp[API_LEN] = ""; // Will temprarily store titles as well as pointer string, so must be longer than TEMP_LEN.
-	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), NULL, NULL, 0, NULL };
+	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), &foundHWNDs };
 	EnumWindows(JS_Window_Find_Callback_Top, reinterpret_cast<LPARAM>(&e));
-	return e.hwnd;
+	if (foundHWNDs.size())
+		return *(foundHWNDs.begin());
+	else
+		return NULL;
 }
 
-
-
-BOOL CALLBACK JS_Window_ArrayFind_Callback_Child(HWND hwnd, LPARAM structPtr)
-{
-	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	char title[TEMP_LEN] = "";
-	int len = GetWindowText(hwnd, title, TEMP_LEN);
-	title[TEMP_LEN - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
-	for (int i = 0; (title[i] != '\0') && (i < len); i++) title[i] = (char)tolower(title[i]); 
-	// If exact, match entire title, otherwise substring
-	if (	 (s->exact  && (strcmp(title, s->target) == 0))
-		|| (!(s->exact) && (strstr(title, s->target) != NULL)))
-	{
-		// Is space available in the reaper.array?
-		uint32_t& currentArraySize = ((uint32_t*)(s->reaperarray))[0];  
-		if (currentArraySize < ((uint32_t*)s->reaperarray)[1])
-		{
-			(s->reaperarray)[currentArraySize + 1] = (double)((intptr_t)hwnd);
-			currentArraySize++;
-		}
-		/*
-		// Convert pointer to string (leaving two spaces for 0x, and add comma separator)
-		sprintf_s(s->temp, s->tempLen - 1, "0x%llX,", (unsigned long long int)hwnd);
-		// Concatenate to hwndString
-		if (strlen(s->hwndString) + strlen(s->temp) < s->hwndLen - 1)
-		{
-			strcat(s->hwndString, s->temp);
-		}
-		*/
-	}
-	return TRUE;
-}
-
-BOOL CALLBACK JS_Window_ArrayFind_Callback_Top(HWND hwnd, LPARAM structPtr)
-{
-	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	char title[TEMP_LEN] = "";
-	int len = GetWindowText(hwnd, title, TEMP_LEN);
-	title[TEMP_LEN - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
-	for (int i = 0; (title[i] != '\0') && (i < len); i++) title[i] = (char)tolower(title[i]); 
-	// If exact, match entire title, otherwise substring
-	if (	 (s->exact  && (strcmp(title, s->target) == 0))
-		|| (!(s->exact) && (strstr(title, s->target) != NULL)))
-	{
-		// Is space available in the reaper.array?
-		uint32_t& currentArraySize = ((uint32_t*)(s->reaperarray))[0];
-		if (currentArraySize < ((uint32_t*)s->reaperarray)[1])
-		{
-			(s->reaperarray)[currentArraySize + 1] = (double)((intptr_t)hwnd);
-			currentArraySize++;
-		}
-		/*
-		// Convert pointer to string (leaving two spaces for 0x, and add comma separator)
-		sprintf_s(s->temp, s->tempLen - 1, "0x%llX,", (unsigned long long int)hwnd);
-		// Concatenate to hwndString
-		if (strlen(s->hwndString) + strlen(s->temp) < s->hwndLen - 1)
-		{
-			strcat(s->hwndString, s->temp);
-		}
-		*/
-	}
-	// Now search all child windows before returning
-	EnumChildWindows(hwnd, JS_Window_ArrayFind_Callback_Child, structPtr);
-	return TRUE;
-}
-
-// Cockos SWELL doesn't provide FindWindow, and FindWindowEx doesn't provide the NULL, NULL top-level mode,
-//		so must code own implementation...
-// This implemetation adds three features:
-//		* Searches child windows as well, so that script GUIs can be found even if docked.
-//		* Optionally matches substrings.
-//		* Finds ALL windows that match title.
-void JS_Window_ArrayFind(const char* title, bool exact, double* reaperarray) //const char* section, const char* key)
-{
-	using namespace Julian;
-
- 	// FindWindow is case-insensitive, so this implementation is too. 
-	// Must first convert title to lowercase:
-	char titleLower[API_LEN];
-	for (int i = 0; i < API_LEN; i++)
-		if (title[i] == '\0') { titleLower[i] = '\0'; break; }
-		else				  { titleLower[i] = (char)tolower(title[i]); }
-	titleLower[API_LEN-1] = '\0'; // Make sure that loooong titles are properly terminated.
-
-	// To communicate with callback functions, use an sEnumWindows:
-	char temp[API_LEN] = ""; // Will temporarily store pointer strings, as well as titles.
-	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), NULL, NULL, 0, reaperarray }; // All the info that will be passed to the Enum callback functions.
-
-	EnumWindows(JS_Window_ArrayFind_Callback_Top, reinterpret_cast<LPARAM>(&e));
-	
-	//SetExtState(section, key, (const char*)hwndString, false);
-}
-
-
+////////////////////////////////////////////////////////////////////////////////////////////
 
 BOOL CALLBACK JS_Window_FindChild_Callback(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	int len = GetWindowText(hwnd, s->temp, s->tempLen);
-	for (int i = 0; (s->temp[i] != '\0') && (i < len); i++) s->temp[i] = (char)tolower(s->temp[i]); // Convert to lowercase
-	if (     (s->exact  && (strcmp(s->temp, s->target) == 0))
-		|| (!(s->exact) && (strstr(s->temp, s->target) != NULL)))
+	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // Convert to lowercase
+	if (     (s.exact  && (strcmp(s.temp, s.target) == 0))
+		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
 	{
-		s->hwnd = hwnd;
+		s.foundHWNDs->insert(hwnd);
 		return FALSE;
 	}
 	else
@@ -494,235 +895,63 @@ void* JS_Window_FindChild(void* parentHWND, const char* title, bool exact)
 	// FindWindow is case-insensitive, so this implementation is too. 
 	// Must first convert title to lowercase:
 	char titleLower[API_LEN]; 
-	for (int i = 0; i < API_LEN; i++)
-		if (title[i] == '\0') { titleLower[i] = '\0'; break; }
-		else				  { titleLower[i] = (char)tolower(title[i]); }
+	for (int i = 0; i < API_LEN; i++) {
+		if (title[i] == '\0')	{ titleLower[i] = '\0'; break; }
+		else					{ titleLower[i] = (char)tolower(title[i]); }
+	}
+	titleLower[API_LEN - 1] = '\0';
 
-	// To communicate with callback functions, use an sEnumWindows:
+	// To communicate with callback functions, use an sEnumWindows struct:
+	std::set<HWND> foundHWNDs;
 	char temp[TEMP_LEN];
-	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), NULL, NULL, 0, NULL };
+	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), &foundHWNDs };
 	EnumChildWindows((HWND)parentHWND, JS_Window_FindChild_Callback, reinterpret_cast<LPARAM>(&e));
-	return e.hwnd;
-}
-
-
-
-BOOL CALLBACK JS_Window_ArrayAllChild_Callback(HWND hwnd, LPARAM ptr) //strPtr)
-{
-	using namespace Julian;
-	double* reaperarray = reinterpret_cast<double*>(ptr);
-	// Is space available in the reaper.array?
-	uint32_t& currentArraySize = ((uint32_t*)(reaperarray))[0];
-	if (currentArraySize < ((uint32_t*)reaperarray)[1])
-	{
-		reaperarray[currentArraySize + 1] = (double)((intptr_t)hwnd);
-		currentArraySize++;
-		return TRUE;
-	}
+	if (foundHWNDs.size())
+		return *(foundHWNDs.begin());
 	else
-		return FALSE;
-	/*
-	char* hwndString = reinterpret_cast<char*>(strPtr);
-	char temp[TEMP_LEN] = "";
-	sprintf_s(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd); // Print with leading 0x so that Lua tonumber will automatically notice that it is hexadecimal.
-	if (strlen(hwndString) + strlen(temp) < EXT_LEN - 1)
-	{
-		strcat(hwndString, temp);
-		return TRUE;
-	}
-	else
-		return FALSE;
-	*/
-}
-
-void JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray) // const char* section, const char* key) //char* buf, int buf_sz)
-{
-	using namespace Julian;
-	//HWND hwnd = (HWND)parentHWND;
-	//char hwndString[EXT_LEN] = "";
-	EnumChildWindows((HWND)parentHWND, JS_Window_ArrayAllChild_Callback, reinterpret_cast<LPARAM>(reaperarray)); //hwndString));
-	//SetExtState(section, key, (const char*)hwndString, false);
+		return NULL;
 }
 
 
-
-BOOL CALLBACK JS_Window_ArrayAllTop_Callback(HWND hwnd, LPARAM lParam)
-{
-	using namespace Julian;
-	double* reaperarray = reinterpret_cast<double*>(lParam);
-	// Is space available in the reaper.array?
-	uint32_t& currentArraySize = ((uint32_t*)(reaperarray))[0];
-	if (currentArraySize < ((uint32_t*)reaperarray)[1])
-	{
-		reaperarray[currentArraySize + 1] = (double)((intptr_t)hwnd);
-		currentArraySize++;
-		return TRUE;
-	}
-	else
-		return FALSE;
-	/*
-	char* hwndString = reinterpret_cast<char*>(strPtr);
-	char temp[TEMP_LEN] = "";
-	sprintf_s(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd); // Print with leading 0x so that Lua tonumber will automatically notice that it is hexadecimal.
-	if (strlen(hwndString) + strlen(temp) < EXT_LEN - 1)
-	{
-		strcat(hwndString, temp);
-		return TRUE;
-	}
-	else
-		return FALSE;
-	*/
-}
-
-void JS_Window_ArrayAllTop(double* reaperarray) //const char* section, const char* key) //char* buf, int buf_sz)
-{
-	using namespace Julian;
-	//char hwndString[EXT_LEN] = "";
-	EnumWindows(JS_Window_ArrayAllTop_Callback, reinterpret_cast<LPARAM>(reaperarray)); //hwndString));
-	//SetExtState(section, key, (const char*)hwndString, false);
-}
-
-
-
-BOOL CALLBACK JS_MIDIEditor_ArrayAll_Callback_Child(HWND hwnd, LPARAM lParam)
-{
-	using namespace Julian;
-	if (MIDIEditor_GetMode(hwnd) != -1) // Is MIDI editor?
-	{
-		double* reaperarray = reinterpret_cast<double*>(lParam);
-		// Is space available in the reaper.array?
-		uint32_t& currentArraySize = ((uint32_t*)(reaperarray))[0];
-		if (currentArraySize < ((uint32_t*)reaperarray)[1])
-		{
-			reaperarray[currentArraySize + 1] = (double)((intptr_t)hwnd);
-			currentArraySize++;
-			return TRUE;
-		}
-		else
-			return FALSE;
-		/*
-		char* hwndString = reinterpret_cast<char*>(lParam);
-		char temp[TEMP_LEN] = "";
-		sprintf_s(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd); // Print with leading 0x so that Lua tonumber will automatically notice that it is hexadecimal.
-		if (strstr(hwndString, temp) == NULL) // Match with bounding 0x and comma
-		{
-			if ((strlen(hwndString) + strlen(temp)) < API_LEN - 1)
-			{
-				strcat(hwndString, temp);
-			}
-			else
-				return FALSE;
-		}
-		*/
-	}
-	// else: not MIDI editor, and continue searching
-	else
-		return TRUE;
-}
-
-BOOL CALLBACK JS_MIDIEditor_ArrayAll_Callback_Top(HWND hwnd, LPARAM lParam)
-{
-	using namespace Julian;
-	if (MIDIEditor_GetMode(hwnd) != -1) // Is MIDI editor?
-	{
-		double* reaperarray = reinterpret_cast<double*>(lParam);
-		// Is space available in the reaper.array?
-		uint32_t& currentArraySize = ((uint32_t*)(reaperarray))[0];
-		if (currentArraySize < ((uint32_t*)reaperarray)[1])
-		{
-			reaperarray[currentArraySize + 1] = (double)((intptr_t)hwnd);
-			currentArraySize++;
-			return TRUE;
-		}
-		else
-			return FALSE;
-		/*
-		char* hwndString = reinterpret_cast<char*>(lParam);
-		char temp[TEMP_LEN] = "";
-		sprintf_s(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd);
-		if (strstr(hwndString, temp) == NULL) // Match with bounding 0x and comma
-		{
-			if ((strlen(hwndString) + strlen(temp)) < API_LEN - 1)
-			{
-				strcat(hwndString, temp);
-			}
-			else
-				return FALSE;
-		}
-		*/
-	}
-
-	// Current window is not MIDI editor, so check if any child windows are. For example if docked in docker or main window.
-	else 
-	{
-		EnumChildWindows(hwnd, JS_MIDIEditor_ArrayAll_Callback_Child, lParam);
-		return TRUE;
-	}
-}
-
-void JS_MIDIEditor_ArrayAll(double* reaperarray) // char* buf, int buf_sz)
-{
-	using namespace Julian;
-	//char hwndString[API_LEN] = "";
-	// To find docked editors, must also enumerate child windows.
-	EnumWindows(JS_MIDIEditor_ArrayAll_Callback_Top, reinterpret_cast<LPARAM>(reaperarray));
-	//strcpy_s(buf, buf_sz, hwndString);
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// The following functions are "List" versions of the "Array" functions, and return the list as an ExtState string
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 BOOL CALLBACK JS_Window_ListFind_Callback_Child(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	int len = GetWindowText(hwnd, s->temp, s->tempLen);
-	s->temp[s->tempLen - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-	
-	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
-	for (int i = 0; (s->temp[i] != '\0') && (i < len); i++) s->temp[i] = (char)tolower(s->temp[i]);
+	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
+	set<HWND>& foundHWNDs = *(s.foundHWNDs);
 
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
+	// Make sure that loooong titles are properly terminated.
+	s.temp[s.tempLen - 1] = '\0';
+	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]);
 	// If exact, match entire title, otherwise substring
-	if (	 (s->exact  && (strcmp(s->temp, s->target) == 0))
-		|| (!(s->exact) && (strstr(s->temp, s->target) != NULL)))
-	{
-		// Convert pointer to string (leaving two spaces for 0x, and add comma separator)
-		snprintf(s->temp, s->tempLen - 1, "0x%llX,", (unsigned long long int)hwnd);
-		// Concatenate to hwndString
-		if (strlen(s->hwndString) + strlen(s->temp) < s->hwndLen - 1)
-		{
-			strcat(s->hwndString, s->temp);
-		}
-		else
-			return FALSE;
-	}
+	if ((	  s.exact  && (strcmp(s.temp, s.target) == 0))
+		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
+		foundHWNDs.insert(hwnd);
+
 	return TRUE;
 }
 
 BOOL CALLBACK JS_Window_ListFind_Callback_Top(HWND hwnd, LPARAM structPtr)
 {
 	using namespace Julian;
-	sEnumWindows* s = reinterpret_cast<sEnumWindows*>(structPtr);
-	int len = GetWindowText(hwnd, s->temp, s->tempLen);
-	s->temp[s->tempLen - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-									// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
-	for (int i = 0; (s->temp[i] != '\0') && (i < len); i++) s->temp[i] = (char)tolower(s->temp[i]);
+	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
+	set<HWND>& foundHWNDs = *(s.foundHWNDs);
+
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length.
+	// Make sure that loooong titles are properly terminated.
+	s.temp[s.tempLen - 1] = '\0'; 
+	// FindWindow is case-insensitive, so this implementation is too. Convert to lowercase.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]);
 	// If exact, match entire title, otherwise substring
-	if (	 (s->exact  && (strcmp(s->temp, s->target) == 0))
-		|| (!(s->exact) && (strstr(s->temp, s->target) != NULL)))
-	{
-		// Convert pointer to string (leaving two spaces for 0x, and add comma separator)
-		snprintf(s->temp, s->tempLen - 1, "0x%llX,", (unsigned long long int)hwnd);
-		// Concatenate to hwndString
-		if (strlen(s->hwndString) + strlen(s->temp) < s->hwndLen - 1)
-		{
-			strcat(s->hwndString, s->temp);
-		}
-		else
-			return FALSE;
-	}
+	if (	 (s.exact  && (strcmp(s.temp, s.target) == 0))
+		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
+		foundHWNDs.insert(hwnd);
+
 	// Now search all child windows before returning
 	EnumChildWindows(hwnd, JS_Window_ListFind_Callback_Child, structPtr);
 	return TRUE;
@@ -734,138 +963,164 @@ BOOL CALLBACK JS_Window_ListFind_Callback_Top(HWND hwnd, LPARAM structPtr)
 //		* Searches child windows as well, so that script GUIs can be found even if docked.
 //		* Optionally matches substrings.
 //		* Finds ALL windows that match title.
-void JS_Window_ListFind(const char* title, bool exact, const char* section, const char* key)
+int JS_Window_ListFind(const char* title, bool exact, char* listOutNeedBig, int listOutNeedBig_sz)
 {
 	using namespace Julian;
 
 	// FindWindow is case-insensitive, so this implementation is too. 
 	// Must first convert title to lowercase:
 	char titleLower[API_LEN];
-	for (int i = 0; i < API_LEN; i++)
-	{
+	for (int i = 0; i < API_LEN; i++) {
 		if (title[i] == '\0') { titleLower[i] = '\0'; break; }
 		else				  { titleLower[i] = (char)tolower(title[i]); }
 	}
-	titleLower[API_LEN - 1] = '\0'; // Make sure that loooong titles are properly terminated.
-									// To communicate with callback functions, use an sEnumWindows:
-	char temp[API_LEN] = ""; // Will temporarily store pointer strings, as well as titles.
-	char hwndString[EXT_LEN] = ""; // Concatenate all pointer strings into this long string.
-	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), NULL, hwndString, sizeof(hwndString), NULL }; // All the info that will be passed to the Enum callback functions.
+	// Make sure that loooong titles are properly terminated.
+	titleLower[API_LEN - 1] = '\0'; 
 
+	// To communicate with callback functions, use an sEnumWindows struct:
+	std::set<HWND> foundHWNDs;
+	char temp[API_LEN] = ""; // Will temporarily store pointer strings, as well as titles.
+	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), &foundHWNDs }; // All the info that will be passed to the Enum callback functions.
+
+	// ********** Enumerate through windows, searching for matching title **********
 	EnumWindows(JS_Window_ListFind_Callback_Top, reinterpret_cast<LPARAM>(&e));
 
-	SetExtState(section, key, (const char*)hwndString, false);
+	return ConvertSetHWNDToString(foundHWNDs, listOutNeedBig, listOutNeedBig_sz);
 }
 
-
-
-BOOL CALLBACK JS_Window_ListAllChild_Callback(HWND hwnd, LPARAM strPtr)
+// Cockos SWELL doesn't provide FindWindow, and FindWindowEx doesn't provide the NULL, NULL top-level mode,
+//		so must code own implementation...
+// This implemetation adds three features:
+//		* Searches child windows as well, so that script GUIs can be found even if docked.
+//		* Optionally matches substrings.
+//		* Finds ALL windows that match title.
+int JS_Window_ArrayFind(const char* title, bool exact, double* reaperarray)
 {
 	using namespace Julian;
-	char* hwndString = reinterpret_cast<char*>(strPtr);
-	char temp[TEMP_LEN] = "";
-	snprintf(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd); // Print with leading 0x so that Lua tonumber will automatically notice that it is hexadecimal.
-	if (strlen(hwndString) + strlen(temp) < EXT_LEN - 1)
-	{
-		strcat(hwndString, temp);
-		return TRUE;
+
+	// FindWindow is case-insensitive, so this implementation is too. 
+	// Must first convert title to lowercase:
+	char titleLower[API_LEN];
+	for (int i = 0; i < API_LEN; i++) {
+		if (title[i] == '\0')	{ titleLower[i] = '\0'; break; }
+		else					{ titleLower[i] = (char)tolower(title[i]); }
 	}
-	else
-		return FALSE;
+	// Make sure that loooong titles are properly terminated.
+	titleLower[API_LEN - 1] = '\0'; 
+
+	// To communicate with callback functions, use an sEnumWindows struct:
+	std::set<HWND> foundHWNDs;
+	char temp[API_LEN] = ""; // Will temporarily store pointer strings, as well as titles.
+	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), &foundHWNDs }; // All the info that will be passed to the Enum callback functions.
+
+	// ********** Enumerate through windows, searching for matching title **********
+	EnumWindows(JS_Window_ListFind_Callback_Top, reinterpret_cast<LPARAM>(&e));
+
+	return ConvertSetHWNDToArray(foundHWNDs, reaperarray);
 }
 
-void JS_Window_ListAllChild(void* parentHWND, const char* section, const char* key) //char* buf, int buf_sz)
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+BOOL CALLBACK JS_Window_ListAllChild_Callback(HWND hwnd, LPARAM lParam)
 {
-	using namespace Julian;
-	HWND hwnd = (HWND)parentHWND;
-	char hwndString[EXT_LEN] = "";
-	EnumChildWindows(hwnd, JS_Window_ListAllChild_Callback, reinterpret_cast<LPARAM>(hwndString));
-	SetExtState(section, key, (const char*)hwndString, false);
+	set<HWND>& foundHWNDs = *(reinterpret_cast<set<HWND>*>(lParam));
+	foundHWNDs.insert(hwnd);
+	return TRUE;
 }
 
-
-
-BOOL CALLBACK JS_Window_ListAllTop_Callback(HWND hwnd, LPARAM strPtr)
+int JS_Window_ListAllChild(void* parentHWND, char* listOutNeedBig, int listOutNeedBig_sz)
 {
-	using namespace Julian;
-	char* hwndString = reinterpret_cast<char*>(strPtr);
-	char temp[TEMP_LEN] = "";
-	snprintf(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd); // Print with leading 0x so that Lua tonumber will automatically notice that it is hexadecimal.
-	if (strlen(hwndString) + strlen(temp) < EXT_LEN - 1)
-	{
-		strcat(hwndString, temp);
-		return TRUE;
-	}
-	else
-		return FALSE;
+	// Enumerate through all child windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	std::set<HWND> foundHWNDs;
+	EnumChildWindows((HWND)parentHWND, JS_Window_ListAllChild_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
+
+	return ConvertSetHWNDToString(foundHWNDs, listOutNeedBig, listOutNeedBig_sz);
 }
 
-void JS_Window_ListAllTop(const char* section, const char* key) //char* buf, int buf_sz)
+int JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray)
 {
-	using namespace Julian;
-	char hwndString[EXT_LEN] = "";
-	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(hwndString));
-	SetExtState(section, key, (const char*)hwndString, false);
+	// Enumerate through all child windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	std::set<HWND> foundHWNDs;
+	EnumChildWindows((HWND)parentHWND, JS_Window_ListAllChild_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
+
+	return ConvertSetHWNDToArray(foundHWNDs, reaperarray);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+BOOL CALLBACK JS_Window_ListAllTop_Callback(HWND hwnd, LPARAM lParam)
+{
+	set<HWND>& foundHWNDs = *(reinterpret_cast<set<HWND>*>(lParam));
+	foundHWNDs.insert(hwnd);
+	return TRUE;
+}
+
+int JS_Window_ListAllTop(char* listOutNeedBig, int listOutNeedBig_sz)
+{
+	// Enumerate through all top-level windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	set<HWND> foundHWNDs;
+	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
+
+	return ConvertSetHWNDToString(foundHWNDs, listOutNeedBig, listOutNeedBig_sz);
+}
+
+int JS_Window_ArrayAllTop(double* reaperarray)
+{
+	// Enumerate through all top-level windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	set<HWND> foundHWNDs;
+	EnumWindows(JS_Window_ListAllTop_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
+
+	return ConvertSetHWNDToArray(foundHWNDs, reaperarray);
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 BOOL CALLBACK JS_MIDIEditor_ListAll_Callback_Child(HWND hwnd, LPARAM lParam)
 {
-	using namespace Julian;
 	if (MIDIEditor_GetMode(hwnd) != -1) // Is MIDI editor?
 	{
-		char* hwndString = reinterpret_cast<char*>(lParam);
-		char temp[TEMP_LEN] = "";
-		snprintf(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd); // Print with leading 0x so that Lua tonumber will automatically notice that it is hexadecimal.
-		if (strstr(hwndString, temp) == NULL) // Match with bounding 0x and comma
-		{
-			if ((strlen(hwndString) + strlen(temp)) < API_LEN - 1)
-			{
-				strcat(hwndString, temp);
-			}
-			else
-				return FALSE;
-		}
+		set<HWND>& foundHWNDs = *(reinterpret_cast<set<HWND>*>(lParam));
+		foundHWNDs.insert(hwnd);
 	}
-	return TRUE; // Always search further, unless hwndString is getting too long
+	return TRUE;
 }
 
 BOOL CALLBACK JS_MIDIEditor_ListAll_Callback_Top(HWND hwnd, LPARAM lParam)
 {
-	using namespace Julian;
 	if (MIDIEditor_GetMode(hwnd) != -1) // Is MIDI editor?
 	{
-		char* hwndString = reinterpret_cast<char*>(lParam);
-		char temp[TEMP_LEN] = "";
-		snprintf(temp, TEMP_LEN - 1, "0x%llX,", (unsigned long long int)hwnd);
-		if (strstr(hwndString, temp) == NULL) // Match with bounding 0x and comma
-		{
-			if ((strlen(hwndString) + strlen(temp)) < API_LEN - 1)
-			{
-				strcat(hwndString, temp);
-			}
-			else
-				return FALSE;
-		}
+		set<HWND>& foundHWNDs = *(reinterpret_cast<set<HWND>*>(lParam));
+		foundHWNDs.insert(hwnd);
 	}
-	else // Check if any child windows are MIDI editor. For example if docked in docker or main window.
+	else // If top level window is not a MIDI editor, check child windows. For example if docked in docker or main window.
 	{
 		EnumChildWindows(hwnd, JS_MIDIEditor_ListAll_Callback_Child, lParam);
 	}
-	return TRUE; // Always search further, unless hwndString is getting too long
+	return TRUE;
 }
 
-void JS_MIDIEditor_ListAll(char* buf, int buf_sz)
+int JS_MIDIEditor_ListAll(char* listOutNeedBig, int listOutNeedBig_sz)
 {
-	using namespace Julian;
-	char hwndString[API_LEN] = "";
+	// Enumerate through all windows and store any MIDI editor HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
 	// To find docked editors, must also enumerate child windows.
-	EnumWindows(JS_MIDIEditor_ListAll_Callback_Top, reinterpret_cast<LPARAM>(hwndString));
-	strncpy(buf, hwndString, buf_sz);
-	buf[buf_sz - 1] = '\0';
+	std::set<HWND> foundHWNDs;
+	EnumWindows(JS_MIDIEditor_ListAll_Callback_Top, reinterpret_cast<LPARAM>(&foundHWNDs));
+	
+	return ConvertSetHWNDToString(foundHWNDs, listOutNeedBig, listOutNeedBig_sz);
 }
 
+int JS_MIDIEditor_ArrayAll(double* reaperarray)
+{
+	// Enumerate through all windows and store any MIDI editor HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	// To find docked editors, must also enumerate child windows.
+	std::set<HWND> foundHWNDs;
+	EnumWindows(JS_MIDIEditor_ListAll_Callback_Top, reinterpret_cast<LPARAM>(&foundHWNDs));
+
+	return ConvertSetHWNDToArray(foundHWNDs, reaperarray);
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -924,44 +1179,45 @@ void JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfter
 
 bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 {
-#ifdef _WIN32
+	// Opacity can only be applied to top-level framed windows, AFAIK, and in Linux, REAPER crashes if opacity is applied to a child window.
+	// So must check that style is WS_THICKFRAME.
 	bool OK = false;
-	if (IsWindow(windowHWND))
+	if (JS_Window_IsWindow(windowHWND))
 	{
-		if (SetWindowLongPtr(windowHWND, GWL_EXSTYLE, GetWindowLongPtr(windowHWND, GWL_EXSTYLE) | WS_EX_LAYERED))
+#ifdef _WIN32
+		if (GetWindowLongPtr(windowHWND, GWL_STYLE) & WS_THICKFRAME)
+		{
+			if (SetWindowLongPtr(windowHWND, GWL_EXSTYLE, GetWindowLongPtr(windowHWND, GWL_EXSTYLE) | WS_EX_LAYERED))
+			{
+				if (strchr(mode, 'A'))
+					OK = !!(SetLayeredWindowAttributes(windowHWND, 0, (BYTE)(value * 255), LWA_ALPHA));
+				else
+				{
+					UINT v = (UINT)value;
+					OK = !!(SetLayeredWindowAttributes(windowHWND, (COLORREF)(((v & 0xFF0000) >> 16) | (v & 0x00FF00) | ((v & 0x0000FF) << 16)), 0, LWA_COLORKEY));
+				}
+#elif __linux__
+		if (GetWindowLong(windowHWND, GWL_STYLE) & WS_THICKFRAME)
+		{
+			if (strchr(mode, 'A') || (!IsWindow(windowHWND)))
+			{
+				GdkWindow* w = (GdkWindow*)windowHWND->m_oswindow;
+				if (w)
+				{
+					gdk_window_set_opacity(w, value);
+					OK = true;
+				}
+#elif __APPLE__
+		if (GetWindowLong(windowHWND, GWL_STYLE) & WS_THICKFRAME)
 		{
 			if (strchr(mode, 'A'))
 			{
-				if (SetLayeredWindowAttributes(windowHWND, 0, (BYTE)(value * 255), LWA_ALPHA))
-					OK = true;
-			}
-			else
-			{
-				UINT v = (UINT)value;
-				if (SetLayeredWindowAttributes(windowHWND, (COLORREF)(((v & 0xFF0000) >> 16) | (v & 0x00FF00) | ((v & 0x0000FF) << 16)), 0, LWA_COLORKEY))
-					OK = true;
+				OK = JS_Window_SetOpacity_ObjC(windowHWND, value);
+#endif
 			}
 		}
 	}
 	return OK;
-#elif __linux__
-	if (strchr(mode, 'C') || (!IsWindow(windowHWND)))
-		return false;
-	else
-	{
-		GdkWindow* w = (GdkWindow*)windowHWND->m_oswindow;
-		gdk_window_set_opacity(w, value);
-		return true;
-	}
-#elif __APPLE__
-	if (strchr(mode, 'C') || (!IsWindow(windowHWND)))
-		return false;
-	else
-	{
-		JS_Window_SetOpacity_ObjC((void*)windowHWND, value);
-		return true;
-	}
-#endif
 }
 
 
@@ -970,14 +1226,14 @@ bool JS_Window_SetTitle(void* windowHWND, const char* title)
 	return !!SetWindowText((HWND)windowHWND, title);
 }
 
-void JS_Window_GetTitle(void* windowHWND, char* buf, int buf_sz)
+void JS_Window_GetTitle(void* windowHWND, char* titleOut, int titleOut_sz)
 {
-	GetWindowText((HWND)windowHWND, buf, buf_sz);
+	GetWindowText((HWND)windowHWND, titleOut, titleOut_sz);
 }
 
-void JS_Window_GetClassName(HWND windowHWND, char* buf, int buf_sz)
+void JS_Window_GetClassName(HWND windowHWND, char* classOut, int classOut_sz)
 {
-	GetClassName(windowHWND, buf, buf_sz);
+	GetClassName(windowHWND, classOut, classOut_sz);
 }
 
 void* JS_Window_HandleFromAddress(double address)
@@ -996,40 +1252,110 @@ void JS_Window_AddressFromHandle(void* handle, double* addressOut)
 	*addressOut = (double)(intptr_t)handle;
 }
 
+//---------------------------------------------------------------------------------
+// WDL/swell has not implemented IsWindow in Linux., and IsWindow is slow in MacOS.
+// If scripts or extensions try to access a HWND that doesn't exist any more,
+//		REAPER may crash completely.
+// AFAIK, this implementation only searches WDL/swell windows, but this shouldn't be a problem,
+//		since scripts are in any case only supposed to access REAPER's windows.
+BOOL CALLBACK JS_Window_IsWindow_Callback_Child(HWND hwnd, LPARAM lParam)
+{
+	HWND& target = *(reinterpret_cast<HWND*>(lParam));
+	if (hwnd == target)
+	{
+		target = nullptr;
+		return FALSE;
+	}
+	else
+		return TRUE;
+}
+
+BOOL CALLBACK JS_Window_IsWindow_Callback_Top(HWND hwnd, LPARAM lParam)
+{
+	HWND& target = *(reinterpret_cast<HWND*>(lParam));
+	if (hwnd == target)
+		target = nullptr;
+	else
+		EnumChildWindows(hwnd, JS_Window_IsWindow_Callback_Child, lParam);
+
+	if (!target)
+		return FALSE;
+	else
+		return TRUE;
+}
+
 bool  JS_Window_IsWindow(void* windowHWND)
 {
+#ifdef _WIN32
 	return !!IsWindow((HWND)windowHWND);
+#else
+	// This implementation will enumerate all WDL/swell windows, looking for a match.
+	// The "target" HWND will be passed to each callback function.
+	// If a match is found, target will be replaced with NULL;
+	if (!windowHWND) return false;
+	HWND target = (HWND)windowHWND;
+	/*bool isFloatingDock;
+
+	if (!windowHWND)
+		return false;
+	else if (DockIsChildOfDock(target, &isFloatingDock) != -1)
+		return true;
+	*/
+
+	/*HWND editor = MIDIEditor_GetActive();
+	if (editor) {
+		if (target == editor)
+			return true;
+		else {
+			EnumChildWindows(editor, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
+			if (!target) return true;
+		}
+	}
+
+	HWND main = GetMainHwnd();
+	if (main) {
+		if (target == main)
+			return true;
+		else {
+			EnumChildWindows(main, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
+			if (!target) return true;
+		}
+	}*/
+
+	EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&target));
+
+	return !target;
+#endif
 }
 
 
 
-
-bool JS_WindowMessage_ListIntercepts(void* windowHWND, char* buf, int buf_sz)
+bool JS_WindowMessage_ListIntercepts(void* windowHWND, char* listOutNeedBig, int listOutNeedBig_sz)
 {
 	using namespace Julian;
-	buf[0] = '\0';
+	listOutNeedBig[0] = '\0';
 	
 	if (mapWindowToData.count((HWND)windowHWND))
 	{
 		auto& messages = mapWindowToData[(HWND)windowHWND].messages;
 		for (const auto& it : messages)
 		{
-			if (strlen(buf) < (UINT)buf_sz - 32)
+			if (strlen(listOutNeedBig) < (UINT)listOutNeedBig_sz - 32)
 			{
 				if (mapMsgToWM_.count(it.first))
-					sprintf(strchr(buf, 0), "%s:", mapMsgToWM_[it.first].c_str());
+					sprintf(strchr(listOutNeedBig, 0), "%s:", mapMsgToWM_[it.first].c_str());
 				else
-					sprintf(strchr(buf, 0), "0x%04X:", it.first);
+					sprintf(strchr(listOutNeedBig, 0), "0x%04X:", it.first);
 				if ((it.second).passthrough)
-					strcat(buf, "passthrough,\0");
+					strcat(listOutNeedBig, "passthrough,\0");
 				else
-					strcat(buf, "block,\0");
+					strcat(listOutNeedBig, "block,\0");
 			}
 			else
 				return false;
 		}
 		
-		char* lastComma{ strrchr(buf, ',') }; // Remove final comma
+		char* lastComma{ strrchr(listOutNeedBig, ',') }; // Remove final comma
 		if (lastComma)
 			*lastComma = '\0';
 		return true;
@@ -1071,6 +1397,11 @@ bool JS_WindowMessage_Post(void* windowHWND, const char* message, int wParamLow,
 	return !!PostMessage(hwnd, uMsg, wParam, lParam);
 }
 
+bool JS_Window_OnCommand(void* windowHWND, int commandID)
+{
+	return JS_WindowMessage_Post(windowHWND, "WM_COMMAND", commandID, 0, 0, 0);
+}
+
 int JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh)
 {
 	using namespace Julian;
@@ -1101,6 +1432,8 @@ int JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, 
 #ifndef GET_WHEEL_DELTA_WPARAM
 #define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))
 #endif
+
+
 
 bool JS_WindowMessage_Peek(void* windowHWND, const char* message, bool* passedThroughOut, double* timeOut, int* wParamLowOut, int* wParamHighOut, int* lParamLowOut, int* lParamHighOut)
 {
@@ -1252,13 +1585,47 @@ int JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passt
 	return 1;
 }
 
+int JS_WindowMessage_PassThrough(void* windowHWND, const char* message, bool passThrough)
+{
+	using namespace Julian;
+	HWND hwnd = (HWND)windowHWND;
+	UINT uMsg;
+
+	// Is this window already being intercepted?
+	if (Julian::mapWindowToData.count(hwnd) == 0)
+		return ERR_ALREADY_INTERCEPTED; // Actually, NOT intercepted
+
+	// Convert string to UINT
+	string msgString = message;
+	if (mapWM_toMsg.count(msgString))
+		uMsg = mapWM_toMsg[msgString];
+	else
+	{
+		errno = 0;
+		uMsg = strtoul(message, nullptr, 16);
+		if (errno != 0 || (uMsg == 0 && !(strstr(message, "0x0000")))) // 0x0000 is a valid message type, so cannot assume 0 is error.
+			return ERR_PARSING;
+	}
+
+	// Is this message type actually already being intercepted?
+	if (Julian::mapWindowToData[hwnd].messages.count(uMsg) == 0)
+		return ERR_ALREADY_INTERCEPTED;
+
+	// Change passthrough
+	Julian::mapWindowToData[hwnd].messages[uMsg].passthrough = passThrough;
+
+	return 1;
+}
+
 int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 {
 	using namespace Julian;
 	HWND hwnd = (HWND)windowHWND;
 
-	// According to swell-functions.h, IsWindow is slow in swell. However, JS_Window_Intercept will probably not be called many times per script. 
-	if (!IsWindow(hwnd))
+	// IsWindow is slow in Linux and MacOS. 
+	// However, checking may be prudent this may be necessary since Linux will crash if windowHWND is not an actual window.
+	// Hopefully, JS_Window_InterceptList will not be called many times per script. 
+	if (!JS_Window_IsWindow(hwnd))
 		return ERR_NOT_WINDOW;
 
 	// strtok *replaces* characters in the string, so better copy messages to new char array.
@@ -1417,10 +1784,11 @@ void JS_WindowMessage_ReleaseWindow(void* windowHWND)
 	if (mapWindowToData.count((HWND)windowHWND))
 	{
 		WNDPROC origProc = mapWindowToData[(HWND)windowHWND].origProc;
+		if (JS_Window_IsWindow(windowHWND))
 #ifdef _WIN32
-		SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
-		SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
 		mapWindowToData.erase((HWND)windowHWND);
 	}
@@ -1433,10 +1801,11 @@ void JS_WindowMessage_ReleaseAll()
 	{
 		HWND hwnd = it->first;
 		WNDPROC origProc = it->second.origProc;
+		if (JS_Window_IsWindow(hwnd))
 #ifdef _WIN32
-		SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
-		SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
+			SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
 	}
 	mapWindowToData.clear();
@@ -1446,13 +1815,13 @@ void JS_WindowMessage_ReleaseAll()
 int JS_Mouse_GetState(int flags)
 {
 	int state = 0;
-	if ((flags & 1)  && (GetAsyncKeyState(VK_LBUTTON) >> 1))	state |= 1;
-	if ((flags & 2)  && (GetAsyncKeyState(VK_RBUTTON) >> 1))	state |= 2;
-	if ((flags & 64) && (GetAsyncKeyState(VK_MBUTTON) >> 1))	state |= 64;
-	if ((flags & 4)  && (GetAsyncKeyState(VK_CONTROL) >> 1))	state |= 4;
-	if ((flags & 8)  && (GetAsyncKeyState(VK_SHIFT) >> 1))		state |= 8;
-	if ((flags & 16) && (GetAsyncKeyState(VK_MENU) >> 1))		state |= 16;
-	if ((flags & 32) && (GetAsyncKeyState(VK_LWIN) >> 1))		state |= 32;
+	if (flags & 1)	 if (GetAsyncKeyState(VK_LBUTTON) >> 1)	state |= 1; 
+	if (flags & 2)	 if (GetAsyncKeyState(VK_RBUTTON) >> 1)	state |= 2;
+	if (flags & 64)  if (GetAsyncKeyState(VK_MBUTTON) >> 1)	state |= 64;
+	if (flags & 4)	 if (GetAsyncKeyState(VK_CONTROL) >> 1)	state |= 4;
+	if (flags & 8)	 if (GetAsyncKeyState(VK_SHIFT) >> 1)	state |= 8;
+	if (flags & 16)  if (GetAsyncKeyState(VK_MENU) >> 1)	state |= 16;
+	if (flags & 32)  if (GetAsyncKeyState(VK_LWIN) >> 1)	state |= 32;
 	return state;
 }
 
@@ -1477,13 +1846,26 @@ void* JS_Mouse_LoadCursor(int cursorNumber)
 #endif
 }
 
-void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName)
+void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName, bool* forceNewLoadOptional)
 {
+	using namespace Julian;
+	string  file	= pathAndFileName;
+	HCURSOR cursor	= NULL;
+	if ((forceNewLoadOptional && *forceNewLoadOptional)
+		|| !(mapFileToMouseCursor.count(file)))
+	{
 #ifdef _WIN32
-	return LoadCursorFromFile(pathAndFileName);
+		cursor = LoadCursorFromFile(pathAndFileName);
 #else
-	return SWELL_LoadCursorFromFile(pathAndFileName);
+		cursor = SWELL_LoadCursorFromFile(pathAndFileName);
 #endif
+		if (cursor)
+			mapFileToMouseCursor[file] = cursor;
+	}
+	else
+		cursor = mapFileToMouseCursor[file];
+
+	return cursor;
 }
 
 void JS_Mouse_SetCursor(void* cursorHandle)
@@ -1518,8 +1900,8 @@ void JS_GDI_ReleaseDC(void* windowHWND, void* deviceHDC)
 
 void* JS_GDI_CreateFillBrush(int color)
 {
-	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 #ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 	return CreateSolidBrush(color);
 #else
 	return CreateSolidBrushAlpha(color, 1);
@@ -1528,7 +1910,9 @@ void* JS_GDI_CreateFillBrush(int color)
 
 void* JS_GDI_CreatePen(int width, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	return CreatePen(PS_SOLID, width, color);
 }
 
@@ -1608,7 +1992,10 @@ int JS_GDI_GetSysColor(const char* GUIElement)
 	else if (strstr(GUIElement, "INFOBK"))		intMode = COLOR_INFOBK;
 	else if (strstr(GUIElement, "INFOTEXT"))	intMode = COLOR_INFOTEXT;
 	int color = GetSysColor(intMode);
-	return ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);;
+#ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
+	return color;
 }
 
 void JS_GDI_SetTextBkMode(void* deviceHDC, int mode)
@@ -1618,20 +2005,27 @@ void JS_GDI_SetTextBkMode(void* deviceHDC, int mode)
 
 void JS_GDI_SetTextBkColor(void* deviceHDC, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetBkColor((HDC)deviceHDC, color);
 }
 
 void JS_GDI_SetTextColor(void* deviceHDC, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetTextColor((HDC)deviceHDC, color);
 }
 
 int JS_GDI_GetTextColor(void* deviceHDC)
 {
 	int color = GetTextColor((HDC)deviceHDC);
-	return ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#ifdef _WIN32
+	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
+	return color;
 }
 
 int JS_GDI_DrawText(void* deviceHDC, const char *text, int len, int left, int top, int right, int bottom, const char* align)
@@ -1658,7 +2052,9 @@ int JS_GDI_DrawText(void* deviceHDC, const char *text, int len, int left, int to
 
 void JS_GDI_SetPixel(void* deviceHDC, int x, int y, int color)
 {
+#ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
+#endif
 	SetPixel((HDC)deviceHDC, x, y, color);
 }
 
@@ -1717,7 +2113,10 @@ bool JS_Window_SetScrollPos(void* windowHWND, const char* scrollbar, int positio
 
 void* JS_LICE_CreateBitmap(bool isSysBitmap, int width, int height)
 {
-	return LICE_CreateBitmap((BOOL)isSysBitmap, width, height); // Always use mode = 1 for SysBitmap, so that can BitBlt to/from screen like HDC.
+	LICE_IBitmap* bm = LICE_CreateBitmap((BOOL)isSysBitmap, width, height); // If SysBitmap, can BitBlt to/from screen like HDC.
+	if (bm) 
+		Julian::LICEBitmaps.emplace(bm);
+	return bm;
 }
 
 int JS_LICE_GetHeight(void* bitmap)
@@ -1737,6 +2136,7 @@ void* JS_LICE_GetDC(void* bitmap)
 
 void JS_LICE_DestroyBitmap(void* bitmap)
 {
+	Julian::LICEBitmaps.erase((LICE_IBitmap*)bitmap);
 	LICE__Destroy((LICE_IBitmap*)bitmap);
 }
 
@@ -1945,10 +2345,31 @@ void JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const
 ///////////////////////////////////////////////////////////
 // Undocumented functions
 
-void JS_Window_AttachTopmostPin(void* windowHWND)
+BOOL CALLBACK JS_Window_AttachTopmost_Callback_Remove(HWND hwnd, LPARAM lparam)
 {
+	std::set<HWND>& s = *(reinterpret_cast<std::set<HWND>*>(lparam));
+	s.erase(hwnd);
+	return TRUE;
+}
+
+BOOL CALLBACK JS_Window_AttachTopmost_Callback_Get(HWND hwnd, LPARAM lparam)
+{
+	std::set<HWND>& s = *(reinterpret_cast<std::set<HWND>*>(lparam));
+	s.insert(hwnd);
+	return TRUE;
+}
+
+HWND JS_Window_AttachTopmostPin(HWND windowHWND)
+{
+	std::set<HWND> childWindows;
+	EnumChildWindows(windowHWND, JS_Window_AttachTopmost_Callback_Get, reinterpret_cast<LPARAM>(&childWindows));
 	AttachWindowTopmostButton((HWND)windowHWND);
 	SetWindowPos((HWND)windowHWND, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER); // Force re-draw frame, otherwise pin only becomes visible when window is moved.
+	EnumChildWindows(windowHWND, JS_Window_AttachTopmost_Callback_Remove, reinterpret_cast<LPARAM>(&childWindows));
+	if (childWindows.size() == 1)
+		return *childWindows.begin();
+	else
+		return nullptr;
 }
 
 void JS_Window_AttachResizeGrip(void* windowHWND)
@@ -1956,31 +2377,140 @@ void JS_Window_AttachResizeGrip(void* windowHWND)
 	AttachWindowResizeGrip((HWND)windowHWND);
 }
 
-bool JS_Window_RemoveXPStyle(void* windowHWND, bool remove)
+
+//////////////////////////////////////////////////////////////
+// Listview functions
+
+int JS_ListView_GetItemCount(HWND listviewHWND)
 {
-	return !!RemoveXPStyle((HWND)windowHWND, (BOOL)remove);
+	return ListView_GetItemCount(listviewHWND);
 }
 
-////////////////////////////////////////////////////////////
-
-void* JS_PtrFromStr(const char* s)
+int JS_ListView_GetSelectedCount(HWND listviewHWND)
 {
-	return (void*)s;
+	return ListView_GetSelectedCount(listviewHWND);
 }
 
-void JS_Int(void* address, int offset, int* intOut)
+int JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz)
 {
-	*intOut = ((int32_t*)address)[offset];
+	int index = ListView_GetNextItem(listviewHWND, -1, LVNI_FOCUSED);
+	if (index != -1) {
+		ListView_GetItemText(listviewHWND, index, 0, textOut, textOut_sz); }
+	else
+		textOut[0] = '\0';
+	return index;
 }
 
-void JS_Byte(void* address, int offset, int* byteOut)
+int JS_ListView_EnumSelItems(HWND listviewHWND, int index)
 {
-	*byteOut = (int)(((int8_t*)address)[offset]);
+	// WDL/swell doesn't offer all these flag options, so this function only offers SELECTED:
+	return ListView_GetNextItem(listviewHWND, index, LVNI_SELECTED);
 }
 
-void JS_Double(void* address, int offset, double* doubleOut)
+void JS_ListView_GetItem(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz, int* stateOut)
 {
-	*doubleOut = ((double*)address)[offset];
+	ListView_GetItemText(listviewHWND, index, subItem, textOut, textOut_sz);
+	*stateOut = ListView_GetItemState(listviewHWND, index, LVIS_SELECTED | LVIS_FOCUSED);
+	// WIN32 and swell define LVIS_SELECTED and LVIS_FOCUSED differently, so if swell, swap values:
+	#ifndef _WIN32
+	if (((*stateOut) & LVIS_SELECTED) && !((*stateOut) & LVIS_FOCUSED))
+	{
+		*stateOut |= LVIS_FOCUSED;
+		*stateOut &= !LVIS_SELECTED;
+	}
+	else if (((*stateOut) & LVIS_FOCUSED) && !((*stateOut) & LVIS_SELECTED))
+	{
+		*stateOut &= !LVIS_FOCUSED;
+		*stateOut |= LVIS_SELECTED;
+	}
+	#endif
+}
+
+int JS_ListView_GetItemState(HWND listviewHWND, int index)
+{
+	int state = ListView_GetItemState(listviewHWND, index, LVIS_SELECTED | LVIS_FOCUSED);
+	// WIN32 and swell define LVIS_SELECTED and LVIS_FOCUSED differently, so if swell, swap values:
+	#ifndef _WIN32
+	if ((state & LVIS_SELECTED) && !(state & LVIS_FOCUSED))
+	{
+		state |= LVIS_FOCUSED;
+		state &= !LVIS_SELECTED;
+	}
+	else if ((state & LVIS_FOCUSED) && !(state & LVIS_SELECTED))
+	{
+		state &= !LVIS_FOCUSED;
+		state |= LVIS_SELECTED;
+	}
+	#endif
+	return state;
+}
+
+void JS_ListView_GetItemText(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz)
+{
+	ListView_GetItemText(listviewHWND, index, subItem, textOut, textOut_sz);
+}
+
+int JS_ListView_ListAllSelItems(HWND listviewHWND, char* itemsOutNeedBig, int itemsOutNeedBig_sz)
+{
+	using namespace Julian;
+
+	std::vector<int> items;
+	items.reserve(1024);
+
+	int prevIndex = -1; // When trying to run this function on a window that is not a listview, may return endless list of 0's.  So check if index increases.
+
+	int index = ListView_GetNextItem(listviewHWND, -1, LVNI_SELECTED);
+	while ((index != -1) && (items.size() < 100000))
+	{
+		if (index == prevIndex) // New index should always be higher than previous.  If not, it may indicate that listviewHWND is not actually a listview window.
+		{
+			items.clear();
+			break;
+		}
+		else
+		{
+			prevIndex = index;
+			items.push_back(index);
+			index = ListView_GetNextItem(listviewHWND, index, LVNI_SELECTED);
+		}
+	}
+
+	// By default, the function will return an error and 0-length string. Only if everything goes well, will retval be flipped positive.
+	int retval = -(int)items.size();
+	itemsOutNeedBig[0] = 0;
+
+	// If windows have been found, convert foundHWNDs into a comma-separated string.
+	if (retval) {
+		// REAPER's realloc_cmd_ptr deletes the contents of the previous buffer,
+		//		so must first print into a large, temporary buffer to determine the exact length of the list string,
+		//		then call realloc_cmd_ptr once and copy the string to itemsOutNeedBig. 
+		char* itemBuf = (char*)malloc(items.size() * Julian::MAX_CHARS_PER_INT); // This buffer is large enough to hold entire list string.
+		if (itemBuf) {
+			int totalLen = 0;  // Total length of list of items (minus terminating \0)
+			int tempLen = 0;  // Length of last item printed
+			for (const int& i : items) {
+				tempLen = snprintf(itemBuf + totalLen, MAX_CHARS_PER_INT, "%u,", i); // As long as < MAX_CHARS, there will not be buffer overflow.
+				if (tempLen < 2 || tempLen > MAX_CHARS_PER_INT) { // Whoops, something went wrong. 
+					totalLen = 0;
+					break;
+				}
+				else
+					totalLen += tempLen;
+			}
+			if (totalLen) {
+				totalLen--; // If any numbers were printed, remove final comma
+							// Copy exact number of printed characters to itemsOut buffer 
+				if (realloc_cmd_ptr(&itemsOutNeedBig, &itemsOutNeedBig_sz, totalLen)) {	// Was realloc successful?
+					if (itemsOutNeedBig && itemsOutNeedBig_sz == totalLen) {	// Was realloc really successful?
+						memcpy(itemsOutNeedBig, itemBuf, totalLen);
+						retval = -retval; // Finally, retval gets an OK value
+					}
+				}
+			}
+			free(itemBuf);
+		}
+	}
+	return retval;
 }
 
 
@@ -1997,6 +2527,7 @@ inline int getArraySize(double* arr)
 	return r;
 }
 
+// Class that manages both a PCM_sink instance and some helper buffers
 
 class AudioWriter
 {
@@ -2017,6 +2548,8 @@ public:
 		if (m_sink == nullptr)
 			return 0;
 		int nch = m_sink->GetNumChannels();
+		if ((numframes * nch) + offset > getArraySize(data))
+			return 0;
 		if (m_convbuf.size() < numframes*nch)
 			m_convbuf.resize(numframes*nch);
 		for (int i = 0; i < nch; ++i)
@@ -2027,6 +2560,11 @@ public:
 				m_writearraypointers[i][j] = data[(j + offset)*nch + i];
 			}
 		}
+		/*
+		For mysterious reasons, WriteDoubles wants a split audio buffer (array of pointers into mono audio buffers), 
+		which is the reason the helper buffer and copying data into it is needed. Pretty much everything 
+		else in the Reaper API seems to be using interleaved buffers for audio...
+		*/
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
 		return numframes;
 	}
@@ -2048,7 +2586,7 @@ AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samp
 	AudioWriter* aw = new AudioWriter(filename, numchans, samplerate);
 	if (aw->IsReady())
 		return aw;
-	delete aw;
+	delete aw; // sink creation failed, delete created instance and return null
 	return nullptr;
 }
 
@@ -2074,15 +2612,180 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 	int bufsize = getArraySize(destbuf);
 	if (bufsize == 0)
 		return 0;
+	if ((numframes*numchans) + destbufoffset > bufsize)
+		return 0;
 	PCM_source_transfer_t block;
 	memset(&block, 0, sizeof(PCM_source_transfer_t));
 	block.time_s = positioninfile; // seeking in the source is based on seconds
 	block.length = numframes;
-	block.nch = numchans; // the source will attempt to render as many channels as requested
-	block.samplerate = samplerate; // properly implemented sources will resample to requested samplerate
+	block.nch = numchans; // the source should attempt to render as many channels as requested
+	block.samplerate = samplerate; // properly implemented sources should resample to requested samplerate
 	block.samples = &destbuf[destbufoffset];
 	src->GetSamples(&block);
 	return block.samples_out;
 }
 
+class PreviewEntry
+{
+public:
+	PreviewEntry(int id, PCM_source* src, double gain, bool loop)
+	{
+		m_id = id;
+		memset(&m_preg, 0, sizeof(preview_register_t));
+#ifdef WIN32
+		InitializeCriticalSection(&m_preg.cs);
+#else
+
+#endif
+		MediaItem* parent_item = nullptr;
+		MediaItem_Take* parent_take = nullptr;
+		MediaTrack* parent_track = nullptr;
+		src->Extended(PCM_SOURCE_EXT_GETITEMCONTEXT, &parent_item, &parent_take, &parent_track);
+		if (parent_take)
+		{
+			ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
+			m_preg.src = src->Duplicate();
+		}
+		else
+		{
+			ShowConsoleMsg("PCM_source has no parent take\n");
+			m_preg.src = src;
+		}
+		m_preg.loop = loop;
+		m_preg.volume = gain;
+	}
+	~PreviewEntry()
+	{
+#ifdef WIN32
+		DeleteCriticalSection(&m_preg.cs);
+#else
+
+#endif
+		delete m_preg.src;
+	}
+	void lock_mutex()
+	{
+#ifdef WIN32
+		EnterCriticalSection(&m_preg.cs);
+#else
+
+#endif
+	}
+	void unlock_mutex()
+	{
+#ifdef WIN32
+		LeaveCriticalSection(&m_preg.cs);
+#else
+
+#endif
+	}
+	preview_register_t m_preg;
+	int m_id = -1;
+};
+
+class PCMSourcePlayerManager;
+PCMSourcePlayerManager* g_sourcepreviewman = nullptr;
+
+class PCMSourcePlayerManager
+{
+public:
+	PCMSourcePlayerManager()
+	{
+		// the 1000 millisecond timer is used to check for previews that have ended
+		m_timer_id = SetTimer(NULL, 3000000, 1000, MyTimerproc);
+	}
+	~PCMSourcePlayerManager()
+	{
+		KillTimer(NULL, m_timer_id);
+	}
+	int startPreview(PCM_source* src, double gain, bool loop)
+	{
+		auto entry = std::make_unique<PreviewEntry>(m_preview_id_count, src, gain, loop);
+		if (entry->m_preg.src)
+		{
+			PlayPreview(&entry->m_preg);
+			m_previews.push_back(std::move(entry));
+			int old_id = m_preview_id_count;
+			++m_preview_id_count;
+			return old_id;
+		}
+		return -10;
+	}
+	void stopPreview(int preview_id)
+	{
+		if (preview_id >= 0)
+		{
+			for (int i = 0; i < m_previews.size(); ++i)
+			{
+				if (m_previews[i]->m_id == preview_id)
+				{
+					StopPreview(&m_previews[i]->m_preg);
+					m_previews.erase(m_previews.begin() + i);
+					break;
+				}
+			}
+		}
+		if (preview_id == -1)
+		{
+			for (int i = 0; i < m_previews.size(); ++i)
+			{
+				StopPreview(&m_previews[i]->m_preg);
+			}
+			m_previews.clear();
+		}
+	}
+	void stopPreviewsIfAtEnd()
+	{
+		for (int i = m_previews.size()-1; i>=0; --i)
+		{
+			m_previews[i]->lock_mutex(); 
+			double curpos = m_previews[i]->m_preg.curpos;
+			bool looping = m_previews[i]->m_preg.loop;
+			m_previews[i]->unlock_mutex();
+			if (looping) // the user is responsible for stopping looping previews!
+				continue;
+			if (curpos >= m_previews[i]->m_preg.src->GetLength()-0.01)
+			{
+				char buf[100];
+				sprintf(buf, "Stopping preview %d\n", m_previews[i]->m_id);
+				ShowConsoleMsg(buf);
+				StopPreview(&m_previews[i]->m_preg);
+				m_previews.erase(m_previews.begin() + i);
+			}
+			
+		}
+	}
+private:
+	static void MyTimerproc(
+		HWND Arg1,
+		UINT Arg2,
+		UINT_PTR Arg3,
+		DWORD Arg4
+	)
+	{
+		if (g_sourcepreviewman)
+			g_sourcepreviewman->stopPreviewsIfAtEnd();
+	}
+	std::vector<std::unique_ptr<PreviewEntry>> m_previews;
+	int m_preview_id_count = 0;
+	UINT_PTR m_timer_id = 0;
+};
+
+
+
+int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop)
+{
+	if (g_sourcepreviewman == nullptr)
+		g_sourcepreviewman = new PCMSourcePlayerManager;
+	return (int)g_sourcepreviewman->startPreview(src, gain, loop);
+}
+
+int Xen_StopSourcePreview(int preview_id)
+{
+	if (g_sourcepreviewman != nullptr)
+		g_sourcepreviewman->stopPreview(preview_id);
+	return 0;
+}
+
 ////////////////////////////////////////////////////////////////
+
