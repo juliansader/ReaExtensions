@@ -2628,6 +2628,57 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 class PreviewEntry
 {
 public:
+	PreviewEntry(int id, PCM_source* src, double gain, bool loop)
+	{
+		m_id = id;
+		memset(&m_preg, 0, sizeof(preview_register_t));
+#ifdef WIN32
+		InitializeCriticalSection(&m_preg.cs);
+#else
+
+#endif
+		MediaItem* parent_item = nullptr;
+		MediaItem_Take* parent_take = nullptr;
+		MediaTrack* parent_track = nullptr;
+		src->Extended(PCM_SOURCE_EXT_GETITEMCONTEXT, &parent_item, &parent_take, &parent_track);
+		if (parent_take)
+		{
+			ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
+			m_preg.src = src->Duplicate();
+		}
+		else
+		{
+			ShowConsoleMsg("PCM_source has no parent take\n");
+			m_preg.src = src;
+		}
+		m_preg.loop = loop;
+		m_preg.volume = gain;
+	}
+	~PreviewEntry()
+	{
+#ifdef WIN32
+		DeleteCriticalSection(&m_preg.cs);
+#else
+
+#endif
+		delete m_preg.src;
+	}
+	void lock_mutex()
+	{
+#ifdef WIN32
+		EnterCriticalSection(&m_preg.cs);
+#else
+
+#endif
+	}
+	void unlock_mutex()
+	{
+#ifdef WIN32
+		LeaveCriticalSection(&m_preg.cs);
+#else
+
+#endif
+	}
 	preview_register_t m_preg;
 	int m_id = -1;
 };
@@ -2640,7 +2691,7 @@ class PCMSourcePlayerManager
 public:
 	PCMSourcePlayerManager()
 	{
-		m_previews.reserve(16);
+		// the 1000 millisecond timer is used to check for previews that have ended
 		m_timer_id = SetTimer(NULL, 3000000, 1000, MyTimerproc);
 	}
 	~PCMSourcePlayerManager()
@@ -2649,33 +2700,26 @@ public:
 	}
 	int startPreview(PCM_source* src, double gain, bool loop)
 	{
-		PreviewEntry entry;
-		memset(&entry.m_preg, 0, sizeof(preview_register_t));
-		InitializeCriticalSection(&entry.m_preg.cs);
-		entry.m_preg.volume = gain;
-		entry.m_preg.loop = loop;
-		entry.m_preg.src = src->Duplicate();
-		if (entry.m_preg.src)
+		auto entry = std::make_unique<PreviewEntry>(m_preview_id_count, src, gain, loop);
+		if (entry->m_preg.src)
 		{
-			m_previews.push_back(entry);
-			PlayPreview(&m_previews.back().m_preg);
+			PlayPreview(&entry->m_preg);
+			m_previews.push_back(std::move(entry));
+			int old_id = m_preview_id_count;
 			++m_preview_id_count;
-			m_previews.back().m_id = m_preview_id_count;
-			return m_preview_id_count;
+			return old_id;
 		}
-		return 0;
+		return -10;
 	}
 	void stopPreview(int preview_id)
 	{
-		if (preview_id > 0)
+		if (preview_id >= 0)
 		{
 			for (int i = 0; i < m_previews.size(); ++i)
 			{
-				if (m_previews[i].m_id == preview_id)
+				if (m_previews[i]->m_id == preview_id)
 				{
-					StopPreview(&m_previews[i].m_preg);
-					DeleteCriticalSection(&m_previews[i].m_preg.cs);
-					delete m_previews[i].m_preg.src;
+					StopPreview(&m_previews[i]->m_preg);
 					m_previews.erase(m_previews.begin() + i);
 					break;
 				}
@@ -2685,9 +2729,7 @@ public:
 		{
 			for (int i = 0; i < m_previews.size(); ++i)
 			{
-				StopPreview(&m_previews[i].m_preg);
-				DeleteCriticalSection(&m_previews[i].m_preg.cs);
-				delete m_previews[i].m_preg.src;
+				StopPreview(&m_previews[i]->m_preg);
 			}
 			m_previews.clear();
 		}
@@ -2696,22 +2738,21 @@ public:
 	{
 		for (int i = m_previews.size()-1; i>=0; --i)
 		{
-			//EnterCriticalSection(&m_previews[i].m_preg.cs);
-			if (m_previews[i].m_preg.curpos >= m_previews[i].m_preg.src->GetLength())
+			m_previews[i]->lock_mutex(); 
+			double curpos = m_previews[i]->m_preg.curpos;
+			bool looping = m_previews[i]->m_preg.loop;
+			m_previews[i]->unlock_mutex();
+			if (looping) // the user is responsible for stopping looping previews!
+				continue;
+			if (curpos >= m_previews[i]->m_preg.src->GetLength()-0.01)
 			{
 				char buf[100];
-				sprintf(buf, "Stopping preview %d\n", m_previews[i].m_id);
+				sprintf(buf, "Stopping preview %d\n", m_previews[i]->m_id);
 				ShowConsoleMsg(buf);
-				StopPreview(&m_previews[i].m_preg);
-				//LeaveCriticalSection(&m_previews[i].m_preg.cs);
-				DeleteCriticalSection(&m_previews[i].m_preg.cs);
-				delete m_previews[i].m_preg.src;
+				StopPreview(&m_previews[i]->m_preg);
 				m_previews.erase(m_previews.begin() + i);
 			}
-			else
-			{
-				//LeaveCriticalSection(&m_previews[i].m_preg.cs);
-			}
+			
 		}
 	}
 private:
@@ -2722,11 +2763,10 @@ private:
 		DWORD Arg4
 	)
 	{
-		//ShowConsoleMsg("timer...");
 		if (g_sourcepreviewman)
 			g_sourcepreviewman->stopPreviewsIfAtEnd();
 	}
-	std::vector<PreviewEntry> m_previews;
+	std::vector<std::unique_ptr<PreviewEntry>> m_previews;
 	int m_preview_id_count = 0;
 	UINT_PTR m_timer_id = 0;
 };
