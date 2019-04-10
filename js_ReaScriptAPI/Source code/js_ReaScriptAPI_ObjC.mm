@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/objc-runtime.h>
-#include "swell.h"
-#include "swell-internal.h"
+#include "WDL/swell/swell.h"
+#include "WDL/swell/swell-internal.h"
 
 bool JS_Window_SetOpacity_ObjC(HWND hwnd, double alpha)
 {

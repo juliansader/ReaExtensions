@@ -2635,7 +2635,10 @@ public:
 #ifdef WIN32
 		InitializeCriticalSection(&m_preg.cs);
 #else
-
+        pthread_mutexattr_t mta;
+        pthread_mutexattr_init(&mta);
+        pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
+        pthread_mutex_init(&m_preg.mutex, &mta);
 #endif
 		MediaItem* parent_item = nullptr;
 		MediaItem_Take* parent_take = nullptr;
@@ -2659,7 +2662,7 @@ public:
 #ifdef WIN32
 		DeleteCriticalSection(&m_preg.cs);
 #else
-
+        pthread_mutex_destroy(&m_preg.mutex);
 #endif
 		delete m_preg.src;
 	}
@@ -2668,7 +2671,7 @@ public:
 #ifdef WIN32
 		EnterCriticalSection(&m_preg.cs);
 #else
-
+        pthread_mutex_lock(&m_preg.mutex);
 #endif
 	}
 	void unlock_mutex()
@@ -2676,7 +2679,7 @@ public:
 #ifdef WIN32
 		LeaveCriticalSection(&m_preg.cs);
 #else
-
+        pthread_mutex_unlock(&m_preg.mutex);
 #endif
 	}
 	preview_register_t m_preg;
