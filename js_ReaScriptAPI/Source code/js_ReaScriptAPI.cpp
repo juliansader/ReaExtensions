@@ -80,6 +80,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			LICE__Destroy(bm);
 		for (auto& p : Julian::mapMallocToSize)
 			free(p.first);
+		Xen_DestroyPreviewSystem();
 		return 0;
 }
 
@@ -2640,11 +2641,24 @@ public:
         pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
         pthread_mutex_init(&m_preg.mutex, &mta);
 #endif
-		MediaItem* parent_item = nullptr;
 		MediaItem_Take* parent_take = nullptr;
-		MediaTrack* parent_track = nullptr;
-		src->Extended(PCM_SOURCE_EXT_GETITEMCONTEXT, &parent_item, &parent_take, &parent_track);
-		if (parent_track)
+		for (int i = 0; i < CountMediaItems(nullptr); ++i)
+		{
+			MediaItem* item = GetMediaItem(nullptr, i);
+			for (int j = 0; j < CountTakes(item); ++j)
+			{
+				MediaItem_Take* temptake = GetMediaItemTake(item, j);
+				PCM_source* tempsrc = GetMediaItemTake_Source(temptake);
+				if (tempsrc == src)
+				{
+					parent_take = temptake;
+					break;
+				}
+			}
+			if (parent_take)
+				break;
+		}
+		if (parent_take)
 		{
 			ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
 			m_preg.src = src->Duplicate();
@@ -2788,6 +2802,11 @@ int Xen_StopSourcePreview(int preview_id)
 	if (g_sourcepreviewman != nullptr)
 		g_sourcepreviewman->stopPreview(preview_id);
 	return 0;
+}
+
+void Xen_DestroyPreviewSystem()
+{
+	delete g_sourcepreviewman;
 }
 
 ////////////////////////////////////////////////////////////////
