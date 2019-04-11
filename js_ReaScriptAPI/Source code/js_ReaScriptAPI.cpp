@@ -2660,15 +2660,19 @@ public:
 		}
 		if (parent_take)
 		{
-			ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
+			//ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
 			m_preg.src = src->Duplicate();
 		}
 		else
 		{
-			ShowConsoleMsg("PCM_source has no parent take\n");
+			//ShowConsoleMsg("PCM_source has no parent take\n");
 			m_preg.src = src;
 		}
 		m_preg.loop = loop;
+		if (gain < 0.0)
+			gain = 0.0;
+		if (gain > 8.0)
+			gain = 8.0;
 		m_preg.volume = gain;
 	}
 	~PreviewEntry()
@@ -2708,7 +2712,7 @@ class PCMSourcePlayerManager
 public:
 	PCMSourcePlayerManager()
 	{
-		// the 1000 millisecond timer is used to check for previews that have ended
+		// the 1000 millisecond timer is used to check for non-looping previews that have ended
 		m_timer_id = SetTimer(NULL, 3000000, 1000, MyTimerproc);
 	}
 	~PCMSourcePlayerManager()
@@ -2726,7 +2730,7 @@ public:
 			++m_preview_id_count;
 			return old_id;
 		}
-		return -10;
+		return -1;
 	}
 	void stopPreview(int preview_id)
 	{
@@ -2763,9 +2767,9 @@ public:
 				continue;
 			if (curpos >= m_previews[i]->m_preg.src->GetLength()-0.01)
 			{
-				char buf[100];
-				sprintf(buf, "Stopping preview %d\n", m_previews[i]->m_id);
-				ShowConsoleMsg(buf);
+				//char buf[100];
+				//sprintf(buf, "Stopping preview %d\n", m_previews[i]->m_id);
+				//ShowConsoleMsg(buf);
 				StopPreview(&m_previews[i]->m_preg);
 				m_previews.erase(m_previews.begin() + i);
 			}
@@ -2773,6 +2777,7 @@ public:
 		}
 	}
 private:
+	// for Windows 32 bit, this may need a calling convention qualifier...?
 	static void MyTimerproc(
 		HWND Arg1,
 		UINT Arg2,
