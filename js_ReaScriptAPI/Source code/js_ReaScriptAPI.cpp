@@ -2641,7 +2641,7 @@ public:
 		MediaItem_Take* parent_take = nullptr;
 		MediaTrack* parent_track = nullptr;
 		src->Extended(PCM_SOURCE_EXT_GETITEMCONTEXT, &parent_item, &parent_take, &parent_track);
-		if (parent_take)
+		if (parent_track)
 		{
 			ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
 			m_preg.src = src->Duplicate();
