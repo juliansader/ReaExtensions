@@ -3227,6 +3227,7 @@ int Xen_StopSourcePreview(int preview_id)
 void Xen_DestroyPreviewSystem()
 {
 	delete g_sourcepreviewman;
+	g_sourcepreviewman = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////
