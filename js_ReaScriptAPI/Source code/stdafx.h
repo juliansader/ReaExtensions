@@ -21,7 +21,10 @@
 //#define REAPERAPI_WANT_SetExtState
 //#define REAPERAPI_WANT_time_precise
 //#define REAPERAPI_WANT_all 50 lice functions...
-#define LICE_PROVIDED_BY_APP
+#ifndef LICE_PROVIDED_BY_APP
+#error "LICE_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DLICE_PROVIDED_BY_APP to command)."
+#endif
+#define LICE_FAVOR_SPEED
 #ifndef SWELL_PROVIDED_BY_APP
 #error "SWELL_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DSWELL_PROVIDED_BY_APP to command)."
 #endif
@@ -35,10 +38,11 @@
 #include "localize.h"
 
 #ifdef _WIN32
-	// #include windows.h is not necessary
+	//#include <windows.h> //is not necessary
 	#include <windowsx.h>
 	#include <Shlobj.h>
 	//#include <Shlobj_core.h>
+	#include <wingdi.h>
 	#define WINAPI __stdcall
 #elif __linux__
 	#include <gtk/gtk.h>
@@ -56,7 +60,7 @@ void(*AttachWindowTopmostButton)(HWND hwnd);
 void(*AttachWindowResizeGrip)(HWND hwnd);
 //BOOL(WINAPI *RemoveXPStyle)(HWND hwnd, int rm); // What does this function do?  Doesn't seem to work.
 
-#include "js_ReaScriptAPI_namespace.h"
 #include "js_ReaScriptAPI.h"
+#include "js_ReaScriptAPI_namespace.h"
 #include "js_ReaScriptAPI_vararg.h"
 #include "js_ReaScriptAPI_def.h"

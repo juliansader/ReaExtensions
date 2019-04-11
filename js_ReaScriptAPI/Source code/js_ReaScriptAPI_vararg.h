@@ -17,6 +17,47 @@ static void* __vararg_JS_Localize(void** arglist, int numparms)
 	return NULL;
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_VKeys_GetState(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_VKeys_GetState((char*)arglist[0], (int)(intptr_t)arglist[1]);
+}
+
+static void* __vararg_JS_VKeys_GetHistory(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_VKeys_GetHistory((char*)arglist[0], (int)(intptr_t)arglist[1]);
+}
+
+static void* __vararg_JS_VKeys_ClearHistory(void** arglist, int numparms)
+{
+	JS_VKeys_ClearHistory();
+	return nullptr;
+}
+
+static void* __vararg_JS_VKeys_Intercept(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_VKeys_Intercept((int)(intptr_t)arglist[0], (int)(intptr_t)arglist[1]);
+}
+
+////////////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_Composite(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Composite((HWND)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (LICE_IBitmap*)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], (int)(intptr_t)arglist[8], (int)(intptr_t)arglist[9]);
+}
+
+static void* __vararg_JS_Composite_Unlink(void** arglist, int numparms)
+{
+	JS_Composite_Unlink((HWND)arglist[0], (LICE_IBitmap*)arglist[1]);
+	return nullptr;
+}
+
+static void* __vararg_JS_Composite_ListBitmaps(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Composite_ListBitmaps((HWND)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
+}
+
 ////////////////////////////////////////////////////////////////////////////
 
 static void* __vararg_JS_Mem_Alloc(void** arglist, int numparms)
@@ -41,19 +82,19 @@ static void* __vararg_JS_String(void** arglist, int numparms)
 
 static void* __vararg_JS_Int(void** arglist, int numparms)
 {
-	JS_Int(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
+	JS_Int(arglist[0], (int)(intptr_t)arglist[1], (int*)arglist[2]);
 	return NULL;
 }
 
 static void* __vararg_JS_Byte(void** arglist, int numparms)
 {
-	JS_Byte(arglist[0], (int)(INT_PTR)arglist[1], (int*)arglist[2]);
+	JS_Byte(arglist[0], (int)(intptr_t)arglist[1], (int*)arglist[2]);
 	return NULL;
 }
 
 static void* __vararg_JS_Double(void** arglist, int numparms)
 {
-	JS_Double(arglist[0], (int)(INT_PTR)arglist[1], (double*)arglist[2]);
+	JS_Double(arglist[0], (int)(intptr_t)arglist[1], (double*)arglist[2]);
 	return NULL;
 }
 
@@ -108,6 +149,23 @@ static void* __vararg_JS_Window_MonitorFromRect(void** arglist, int numparms)
 {
 	JS_Window_MonitorFromRect((int)(intptr_t)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (bool)arglist[4], (int*)arglist[5], (int*)arglist[6], (int*)arglist[7], (int*)arglist[8]);
 	return nullptr;
+}
+
+static void* __vararg_JS_Window_GetViewportFromRect(void** arglist, int numparms)
+{
+	JS_Window_GetViewportFromRect((int)(intptr_t)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (bool)arglist[4], (int*)arglist[5], (int*)arglist[6], (int*)arglist[7], (int*)arglist[8]);
+	return nullptr;
+}
+
+static void* __vararg_JS_Window_Update(void** arglist, int numparms)
+{
+	JS_Window_Update((HWND)arglist[0]);
+	return nullptr;
+}
+
+static void* __vararg_JS_Window_InvalidateRect(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Window_InvalidateRect((HWND)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (bool)arglist[5]);
 }
 
 static void* __vararg_JS_Window_FromPoint(void** arglist, int numparms)
@@ -318,17 +376,17 @@ static void* __vararg_JS_Window_AddressFromHandle(void** arglist, int numparms)
 
 static void* __vararg_JS_WindowMessage_Post(void** arglist, int numparms)
 {
-  return (void*)(intptr_t)JS_WindowMessage_Post((void*)arglist[0], (const char*)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5]);
+  return (void*)(intptr_t)JS_WindowMessage_Post((void*)arglist[0], (const char*)arglist[1], arglist[2] ? *(double*)arglist[2] : 0.0, (int)(intptr_t)arglist[3], arglist[4] ? *(double*)arglist[4] : 0.0, (int)(intptr_t)arglist[5]);
 }
 
 static void* __vararg_JS_Window_OnCommand(void** arglist, int numparms)
 {
-	return (void*)JS_Window_OnCommand((void*)arglist[0], (int)(intptr_t)arglist[1]);
+  return (void*)JS_Window_OnCommand((void*)arglist[0], (int)(intptr_t)arglist[1]);
 }
 
 static void* __vararg_JS_WindowMessage_Send(void** arglist, int numparms)
 {
-  return (void*)(intptr_t)JS_WindowMessage_Send((void*)arglist[0], (const char*)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5]);
+  return (void*)(intptr_t)JS_WindowMessage_Send((void*)arglist[0], (const char*)arglist[1], arglist[2] ? *(double*)arglist[2] : 0.0, (int)(intptr_t)arglist[3], arglist[4] ? *(double*)arglist[4] : 0.0, (int)(intptr_t)arglist[5]);
 }
 
 static void* __vararg_JS_WindowMessage_Peek(void** arglist, int numparms)
@@ -375,8 +433,19 @@ static void* __vararg_JS_WindowMessage_ReleaseAll(void** arglist, int numparms)
 
 static void* __vararg_JS_Mouse_GetState(void** arglist, int numparms)
 {
-  return (void*)(intptr_t)JS_Mouse_GetState((int)(intptr_t)arglist[0]);
+	return (void*)(intptr_t)JS_Mouse_GetState((int)(intptr_t)arglist[0]);
 }
+/*
+static void* __vararg_JS_Mouse_GetHistory(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Mouse_GetHistory((int)(intptr_t)arglist[0]);
+}
+
+static void* __vararg_JS_Mouse_ClearHistory(void** arglist, int numparms)
+{
+	JS_Mouse_ClearHistory();
+	return nullptr;
+}*/
 
 static void* __vararg_JS_Mouse_SetPosition(void** arglist, int numparms)
 {
@@ -563,13 +632,13 @@ static void* __vararg_JS_GDI_LineTo(void** arglist, int numparms)
 
 static void* __vararg_JS_GDI_Blit(void** arglist, int numparms)
 {
-	JS_GDI_Blit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (void*)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7]);
+	JS_GDI_Blit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (void*)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], (numparms > 8) ? (const char*)arglist[8] : "SRCCOPY");
 	return NULL;
 }
 
 static void* __vararg_JS_GDI_StretchBlit(void** arglist, int numparms)
 {
-	JS_GDI_StretchBlit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (void*)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], (int)(intptr_t)arglist[8], (int)(intptr_t)arglist[9]);
+	JS_GDI_StretchBlit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (void*)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], (int)(intptr_t)arglist[8], (int)(intptr_t)arglist[9], (numparms > 10) ? (const char*)arglist[10] : "SRCCOPY");
 	return NULL;
 }
 
@@ -578,71 +647,74 @@ static void* __vararg_JS_GDI_StretchBlit(void** arglist, int numparms)
 
 static void* __vararg_JS_LICE_CreateBitmap(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_CreateBitmap((bool)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2]);
+	return (void*)(intptr_t)JS_LICE_CreateBitmap((bool)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2]);
 }
 
 static void* __vararg_JS_LICE_GetHeight(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_GetHeight((void*)arglist[0]);
+	return (void*)(intptr_t)JS_LICE_GetHeight((void*)arglist[0]);
 }
 
 static void* __vararg_JS_LICE_GetWidth(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_GetWidth((void*)arglist[0]);
+	return (void*)(intptr_t)JS_LICE_GetWidth((void*)arglist[0]);
 }
 
 static void* __vararg_JS_LICE_GetDC(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_GetDC((void*)arglist[0]);
+	return (void*)(intptr_t)JS_LICE_GetDC((void*)arglist[0]);
 }
 
 static void* __vararg_JS_LICE_DestroyBitmap(void** arglist, int numparms)
 {
-	JS_LICE_DestroyBitmap((void*)arglist[0]);
+	JS_LICE_DestroyBitmap((LICE_IBitmap*)arglist[0]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_LoadPNG(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_LoadPNG((const char*)arglist[0]);
+	return (void*)(intptr_t)JS_LICE_LoadPNG((const char*)arglist[0]);
 }
+
+/*static void* __vararg_JS_LICE_WritePNG(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_LICE_WritePNG((const char*)arglist[0], (LICE_IBitmap*)arglist[1], (bool)arglist[2]);
+}*/
 
 static void* __vararg_JS_LICE_Blit(void** arglist, int numparms)
 {
-	JS_LICE_Blit((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (void*)arglist[3], (int)(INT_PTR)arglist[4], (int)(INT_PTR)arglist[5], (int)(INT_PTR)arglist[6], (int)(INT_PTR)arglist[7], arglist[8] ? *(double*)arglist[8] : 0.0, (const char*)arglist[9]);
+	JS_LICE_Blit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (void*)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], arglist[8] ? *(double*)arglist[8] : 0.0, (const char*)arglist[9]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_RotatedBlit(void** arglist, int numparms)
 {
-	JS_LICE_RotatedBlit((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (void*)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, arglist[11] ? *(double*)arglist[11] : 0.0, arglist[12] ? *(double*)arglist[12] : 0.0, (bool)arglist[13], arglist[14] ? *(double*)arglist[14] : 0.0, (const char*)arglist[15]);
+	JS_LICE_RotatedBlit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (void*)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, arglist[11] ? *(double*)arglist[11] : 0.0, arglist[12] ? *(double*)arglist[12] : 0.0, (bool)arglist[13], arglist[14] ? *(double*)arglist[14] : 0.0, (const char*)arglist[15]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_ScaledBlit(void** arglist, int numparms)
 {
-	JS_LICE_ScaledBlit((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (void*)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, (const char*)arglist[11]);
+	JS_LICE_ScaledBlit((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (void*)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, (const char*)arglist[11]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_IsFlipped(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_IsFlipped((void*)arglist[0]);
+	return (void*)(intptr_t)JS_LICE_IsFlipped((void*)arglist[0]);
 }
 
 static void* __vararg_JS_LICE_Resize(void** arglist, int numparms)
 {
-	JS_LICE_Resize((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2]);
+	JS_LICE_Resize((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_Clear(void** arglist, int numparms)
 {
-	JS_LICE_Clear((void*)arglist[0], (int)(INT_PTR)arglist[1]);
+	JS_LICE_Clear((void*)arglist[0], (int)(intptr_t)arglist[1]);
 	return NULL;
 }
-
-
 
 static void* __vararg_JS_LICE_CreateFont(void** arglist, int numparms)
 {
@@ -663,31 +735,31 @@ static void* __vararg_JS_LICE_SetFontFromGDI(void** arglist, int numparms)
 
 static void* __vararg_JS_LICE_SetFontColor(void** arglist, int numparms)
 {
-	JS_LICE_SetFontColor((void*)arglist[0], (int)(INT_PTR)arglist[1]);
+	JS_LICE_SetFontColor((void*)arglist[0], (int)(intptr_t)arglist[1]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_SetFontBkColor(void** arglist, int numparms)
 {
-	JS_LICE_SetFontBkColor((void*)arglist[0], (int)(INT_PTR)arglist[1]);
+	JS_LICE_SetFontBkColor((void*)arglist[0], (int)(intptr_t)arglist[1]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_DrawText(void** arglist, int numparms)
 {
-	JS_LICE_DrawText((void*)arglist[0], (void*)arglist[1], (const char*)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (int)(INT_PTR)arglist[5], (int)(INT_PTR)arglist[6], (int)(INT_PTR)arglist[7]);
+	JS_LICE_DrawText((void*)arglist[0], (void*)arglist[1], (const char*)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_DrawChar(void** arglist, int numparms)
 {
-	JS_LICE_DrawChar((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (char)(intptr_t)arglist[3], (int)(INT_PTR)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6]);
+	JS_LICE_DrawChar((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (char)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_GradRect(void** arglist, int numparms)
 {
-	JS_LICE_GradRect((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4],
+	JS_LICE_GradRect((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4],
 					arglist[5] ? *(double*)arglist[5] : 0.0, arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, arglist[10] ? *(double*)arglist[10] : 0.0, arglist[11] ? *(double*)arglist[11] : 0.0, arglist[12] ? *(double*)arglist[12] : 0.0, arglist[13] ? *(double*)arglist[13] : 0.0, arglist[14] ? *(double*)arglist[14] : 0.0, arglist[15] ? *(double*)arglist[15] : 0.0, arglist[16] ? *(double*)arglist[16] : 0.0,
 					(const char*)arglist[17]);
 	return NULL;
@@ -695,66 +767,66 @@ static void* __vararg_JS_LICE_GradRect(void** arglist, int numparms)
 
 static void* __vararg_JS_LICE_FillRect(void** arglist, int numparms)
 {
-	JS_LICE_FillRect((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (int)(INT_PTR)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, (const char*)arglist[7]);
+	JS_LICE_FillRect((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, (const char*)arglist[7]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_FillTriangle(void** arglist, int numparms)
 {
-	JS_LICE_FillTriangle((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], (int)(INT_PTR)arglist[5], (int)(INT_PTR)arglist[6], (int)(INT_PTR)arglist[7], arglist[8] ? *(double*)arglist[8] : 0.0, (const char*)arglist[9]);
+	JS_LICE_FillTriangle((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (int)(intptr_t)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], arglist[8] ? *(double*)arglist[8] : 0.0, (const char*)arglist[9]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_FillPolygon(void** arglist, int numparms)
 {
-	JS_LICE_FillPolygon((void*)arglist[0], (const char*)arglist[1], (const char*)arglist[2], (int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6]);
+	JS_LICE_FillPolygon((void*)arglist[0], (const char*)arglist[1], (const char*)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_FillCircle(void** arglist, int numparms)
 {
-	JS_LICE_FillCircle((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, (int)(INT_PTR)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6], (bool)arglist[7]);
+	JS_LICE_FillCircle((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, (int)(intptr_t)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6], (bool)arglist[7]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_Line(void** arglist, int numparms)
 {
-	JS_LICE_Line((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, (int)(INT_PTR)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, (const char*)arglist[7], (bool)arglist[8]);
+	JS_LICE_Line((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, (int)(intptr_t)arglist[5], arglist[6] ? *(double*)arglist[6] : 0.0, (const char*)arglist[7], (bool)arglist[8]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_Bezier(void** arglist, int numparms)
 {
-	JS_LICE_Bezier((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, arglist[5] ? *(double*)arglist[5] : 0.0, arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, (int)(INT_PTR)arglist[10], arglist[11] ? *(double*)arglist[11] : 0.0, (const char*)arglist[12], (bool)arglist[13]);
+	JS_LICE_Bezier((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, arglist[5] ? *(double*)arglist[5] : 0.0, arglist[6] ? *(double*)arglist[6] : 0.0, arglist[7] ? *(double*)arglist[7] : 0.0, arglist[8] ? *(double*)arglist[8] : 0.0, arglist[9] ? *(double*)arglist[9] : 0.0, (int)(intptr_t)arglist[10], arglist[11] ? *(double*)arglist[11] : 0.0, (const char*)arglist[12], (bool)arglist[13]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_Arc(void** arglist, int numparms)
 {
-	JS_LICE_Arc((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, arglist[5] ? *(double*)arglist[5] : 0.0, (int)(INT_PTR)arglist[6], arglist[7] ? *(double*)arglist[7] : 0.0, (const char*)arglist[8], (bool)arglist[9]);
+	JS_LICE_Arc((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, arglist[5] ? *(double*)arglist[5] : 0.0, (int)(intptr_t)arglist[6], arglist[7] ? *(double*)arglist[7] : 0.0, (const char*)arglist[8], (bool)arglist[9]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_Circle(void** arglist, int numparms)
 {
-	JS_LICE_Circle((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, (int)(INT_PTR)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6], (bool)arglist[7]);
+	JS_LICE_Circle((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, (int)(intptr_t)arglist[4], arglist[5] ? *(double*)arglist[5] : 0.0, (const char*)arglist[6], (bool)arglist[7]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_RoundRect(void** arglist, int numparms)
 {
-	JS_LICE_RoundRect((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, (int)(INT_PTR)arglist[5], (int)(INT_PTR)arglist[6], arglist[7] ? *(double*)arglist[7] : 0.0, (const char*)arglist[8], (bool)arglist[9]);
+	JS_LICE_RoundRect((void*)arglist[0], arglist[1] ? *(double*)arglist[1] : 0.0, arglist[2] ? *(double*)arglist[2] : 0.0, arglist[3] ? *(double*)arglist[3] : 0.0, arglist[4] ? *(double*)arglist[4] : 0.0, (int)(intptr_t)arglist[5], (int)(intptr_t)arglist[6], arglist[7] ? *(double*)arglist[7] : 0.0, (const char*)arglist[8], (bool)arglist[9]);
 	return NULL;
 }
 
 static void* __vararg_JS_LICE_GetPixel(void** arglist, int numparms)
 {
-	return (void*)(INT_PTR)JS_LICE_GetPixel((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2]);
+	return (void*)(intptr_t)JS_LICE_GetPixel((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2]);
 }
 
 static void* __vararg_JS_LICE_PutPixel(void** arglist, int numparms)
 {
-	JS_LICE_PutPixel((void*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2], (int)(INT_PTR)arglist[3], arglist[4] ? *(double*)arglist[4] : 0.0, (const char*)arglist[5]);
+	JS_LICE_PutPixel((void*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], arglist[4] ? *(double*)arglist[4] : 0.0, (const char*)arglist[5]);
 	return NULL;
 }
 
@@ -824,7 +896,7 @@ static void* __vararg_JS_ListView_ListAllSelItems(void** arglist, int numparms)
 static void* __vararg_Xen_AudioWriter_Create(void** arglist, int numparms)
 {
 	if (numparms > 2)
-		return Xen_AudioWriter_Create((const char*)arglist[0], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[2]);
+		return Xen_AudioWriter_Create((const char*)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2]);
 	return nullptr;
 }
 
@@ -840,17 +912,17 @@ static void* __vararg_Xen_AudioWriter_Write(void** arglist, int numparms)
 	int result = 0;
 	if (numparms > 3)
 		result = Xen_AudioWriter_Write(
-		(AudioWriter*)arglist[0], (double*)arglist[2], (int)(INT_PTR)arglist[1], (int)(INT_PTR)arglist[3]);
-	return (void*)(INT_PTR)result;
+		(AudioWriter*)arglist[0], (double*)arglist[2], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[3]);
+	return (void*)(intptr_t)result;
 }
 
 static void* __vararg_Xen_GetMediaSourceSamples(void** arglist, int numparms)
 {
 	int result = 0;
 	if (numparms > 6)
-		result = Xen_GetMediaSourceSamples((PCM_source*)arglist[0], (double*)arglist[1], (int)(INT_PTR)arglist[2],
-		(int)(INT_PTR)arglist[3], (int)(INT_PTR)arglist[4], *(double*)arglist[5], *(double*)arglist[6]);
-	return (void*)(INT_PTR)result;
+		result = Xen_GetMediaSourceSamples((PCM_source*)arglist[0], (double*)arglist[1], (int)(intptr_t)arglist[2],
+		(int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], *(double*)arglist[5], *(double*)arglist[6]);
+	return (void*)(intptr_t)result;
 }
 
 static void* __vararg_Xen_StartSourcePreview(void** arglist, int numparms)

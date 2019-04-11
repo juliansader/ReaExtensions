@@ -3,7 +3,7 @@
 using namespace std;
 
 // This function is called when REAPER loads or unloads the extension.
-// If rec !- nil, the extenstion is being loaded.  If rec == nil, the extension is being UNloaded.
+// If rec != nil, the extension is being loaded.  If rec == nil, the extension is being UNloaded.
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t *rec)
 {
 	if (rec)
@@ -62,7 +62,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			plugin_register(f.regkey_def, (void*)f.defstring);
 			// API_... for exposing to other extensions, and for IDE to recognize and color functions while typing 
 			plugin_register(f.regkey_func, f.func);
-			// APIvarag_... for exporting to ReaScript API
+			// APIvararg_... for exporting to ReaScript API
 			plugin_register(f.regkey_vararg, f.func_vararg);
 		}
 
@@ -70,18 +70,39 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		for (auto& i : Julian::mapWM_toMsg)
 			Julian::mapMsgToWM_.emplace(i.second, i.first);
 
+		plugin_register("accelerator", &(Julian::sAccelerator));
+
 		return 1; // success
 	}
 	// Does an extension need to do anything when unloading?  
-	// To prevent memort leaks, perhaps try to delete any stuff that may remain in memory?
+	// To prevent memory leaks, perhaps try to delete any stuff that may remain in memory?
 	// On Windows, LICE bitmaps are automatically destroyed when REAPER quits, but to make extra sure, this function will destroy them explicitly.
-	else
-		for (LICE_IBitmap* bm : Julian::LICEBitmaps)
-			LICE__Destroy(bm);
-		for (auto& p : Julian::mapMallocToSize)
-			free(p.first);
+
+	// Why store stuff in extra sets?  For some unexplained reason REAPER crashes if I try to destroy LICE bitmaps explicitly. And for another unexplained reason, this roundabout way works...
+	else 
+	{
+		std::set<HWND> windowsToRestore;
+		for (auto& i : Julian::mapWindowData)
+			windowsToRestore.insert(i.first);
+		for (HWND hwnd : windowsToRestore)
+			JS_WindowMessage_RestoreOrigProc(hwnd);
+
+		for (auto& bm : Julian::LICEBitmaps)
+			LICE__Destroy(bm.first);
+		/*
+		std::set<LICE_IBitmap*> bitmapsToDelete;
+		for (auto& i : Julian::LICEBitmaps)
+			bitmapsToDelete.insert(i.first);
+		for (LICE_IBitmap* bm : bitmapsToDelete)
+			JS_LICE_DestroyBitmap(bm);
+		*/
+		for (auto& i : Julian::mapMallocToSize)
+			free(i.first);
+
+		plugin_register("-accelerator", &(Julian::sAccelerator));
 		Xen_DestroyPreviewSystem();
 		return 0;
+	}
 }
 
 /*
@@ -102,12 +123,19 @@ v0.971
 v0.972
  * macOS: Fixed GetClientRect.
  * WindowsOS: Confirmation dialogs for BrowseForSaveFile and BrowseForOpenFiles.
- * New function: MonitorFromRect
+ * New function: MonitorFromRect.
  * GDI: Linux and macOS use same color format as Windows.
+v0.980
+ * Functions for getting and intercepting virtual key / keyboard states.
+ * Functions for compositing LICE bitmaps into REAPER windows.
+ * Enabled alpha blending for GDI blitting.
+v0.981
+ * Don't cache GDI HDCs.
+ * JS_WindowMessage_Send and _Post can skip MAKEWPARAM and MAKELPARAM to send larger values.
 */
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.972;
+	*versionOut = 0.981;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -128,6 +156,104 @@ void JS_Localize(const char* USEnglish, const char* LangPackSection, char* trans
 	*/
 	strncpy(translationOut, trans, translationOut_sz);
 	translationOut[translationOut_sz - 1] = 0;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Virtual keys / Keyboard functions
+
+static unsigned char VK_Bitmap[256] { 0 };
+static unsigned char VK_BitmapHistory[256] { 0 };
+static unsigned char VK_Intercepts[256] { 0 };
+static constexpr size_t VK_Bitmap_sz_min1 = sizeof(VK_Bitmap)-1;
+
+int JS_VKeys_Callback(MSG* event, accelerator_register_t*)
+{
+	const WPARAM& keycode = event->wParam;
+	const UINT& uMsg = event->message;
+
+	switch (uMsg) 
+	{
+		case WM_KEYDOWN:
+		case WM_SYSKEYDOWN:
+			if (keycode < 256) {
+				VK_Bitmap[keycode] = 1;
+				if (VK_BitmapHistory[keycode] < 255) VK_BitmapHistory[keycode]++;
+			}
+			break;
+		case WM_KEYUP:
+		case WM_SYSKEYUP:
+			if (keycode < 256)
+				VK_Bitmap[keycode] = 0; // (keycode >> 3)] &= (~((uint8_t)(1 << (keycode & 0b00000111))));
+			break;
+	}
+
+	if ((VK_Intercepts[keycode] != 0) && (uMsg != WM_KEYUP) && (uMsg != WM_SYSKEYUP)) // Block keystroke, but not when releasing key
+		return 1; // Eat keystroke
+	else
+		return 0; // "Not my window", whatever this means?
+}
+
+void JS_VKeys_ClearHistory()
+{
+	std::fill_n(VK_Bitmap, 256, 0);
+	std::fill_n(VK_BitmapHistory, 256, 0);
+}
+
+//void JS_VKeys_GetState(int* keys00to1FOut, int* keys20to3FOut, int* keys40to5FOut, int* keys60to7FOut, int* keys80to9FOut, int* keysA0toBFOut, int* keysC0toDFOut, int* keysE0toFFOut)
+bool JS_VKeys_GetState(char* stateOutNeedBig, int stateOutNeedBig_sz)
+{
+	if (realloc_cmd_ptr(&stateOutNeedBig, &stateOutNeedBig_sz, VK_Bitmap_sz_min1)) {
+		if (stateOutNeedBig_sz == VK_Bitmap_sz_min1) {
+			memcpy(stateOutNeedBig, VK_Bitmap+1, VK_Bitmap_sz_min1);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool JS_VKeys_GetHistory(char* stateOutNeedBig, int stateOutNeedBig_sz)
+{
+	if (realloc_cmd_ptr(&stateOutNeedBig, &stateOutNeedBig_sz, VK_Bitmap_sz_min1)) {
+		if (stateOutNeedBig_sz == VK_Bitmap_sz_min1) {
+			memcpy(stateOutNeedBig, VK_BitmapHistory+1, VK_Bitmap_sz_min1);
+			return true;
+		}
+	}
+	return false;
+}
+
+int JS_VKeys_Intercept(int keyCode, int intercept)
+{
+	if (0 <= keyCode && keyCode < 256) {
+		if (intercept > 0 && VK_Intercepts[keyCode] < 255) VK_Intercepts[keyCode]++;
+		else if (intercept < 0 && VK_Intercepts[keyCode] > 0) VK_Intercepts[keyCode]--;
+
+		return VK_Intercepts[keyCode];
+	}
+
+	else if (keyCode == -1) {
+		int maxIntercept = 0;
+		if (intercept > 0) {
+			for (int i = 0; i < 256; i++) {
+				if (VK_Intercepts[i] < 255) VK_Intercepts[i]++;
+				if (VK_Intercepts[i] > maxIntercept) maxIntercept = VK_Intercepts[i];
+			}
+		}
+		else if (intercept < 0) {
+			for (int i = 0; i < 256; i++) {
+				if (VK_Intercepts[i] > 0) VK_Intercepts[i]--;
+				if (VK_Intercepts[i] > maxIntercept) maxIntercept = VK_Intercepts[i];
+			}
+		}
+		else { // intercept == 0
+			for (int i = 0; i < 256; i++) {
+				if (VK_Intercepts[i] > maxIntercept) maxIntercept = VK_Intercepts[i];
+			}
+		}
+		return maxIntercept;
+	}
+
+	return -1;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -206,8 +332,13 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 	// NeedBig buffers should be 2^15 chars by default
 	if (fileNameOutNeedBig_sz < 16000) return -1;
 
-	// Set default extension and filter
+	// Set default extension and filter.
+	// OSX dialogs do not understand *.*, and in any case do not show filter text, so don't change if on OSX.
+#ifdef __APPLE__
+	const char* newExtList = extensionList;
+#else
 	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
+#endif
 
 #ifdef _WIN32
 	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
@@ -259,8 +390,13 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 
 int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, bool allowMultiple, char* fileNamesOutNeedBig, int fileNamesOutNeedBig_sz)
 {
-	// Set default extension and filter
+	// Set default extension and filter.
+	// OSX dialogs do not understand *.*, and in any case do not show filter text, so don't change if on OSX.
+#ifdef __APPLE__
+	const char* newExtList = extensionList;
+#else
 	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
+#endif
 
 	// GetOpenFileName returns the required buffer length in a mere 2 bytes, so a beffer size of 1024*1024 should be more than enough.
 	constexpr uint32_t LONGLEN = 1024 * 1024;
@@ -541,6 +677,36 @@ void JS_Window_MonitorFromRect(int x1, int y1, int x2, int y2, bool wantWork, in
 	*leftOut = (int)r.left;
 	*rightOut = (int)r.right;
 }
+
+void JS_Window_GetViewportFromRect(int x1, int y1, int x2, int y2, bool wantWork, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
+{
+	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
+	RECT s{ x1, y1, x2, y2 };
+#ifdef _WIN32
+	HMONITOR m = MonitorFromRect(&s, MONITOR_DEFAULTTOPRIMARY);
+	MONITORINFO i{ sizeof(MONITORINFO), };
+	GetMonitorInfo(m, &i);
+	RECT& r = wantWork ? i.rcWork : i.rcMonitor;
+#else
+	RECT r{ 0,0,0,0 };
+	SWELL_GetViewPort(&r, &s, wantWork);
+#endif
+
+#ifdef __APPLE__
+	if (r.top < r.bottom) {
+#else
+	if (r.top > r.bottom) {
+#endif
+		*topOut = (int)r.bottom;
+		*bottomOut = (int)r.top;
+	}
+	else {
+		*topOut = (int)r.top;
+		*bottomOut = (int)r.bottom;
+	}
+	*leftOut = (int)r.left;
+	*rightOut = (int)r.right;
+	}
 
 void* JS_Window_FromPoint(int x, int y)
 {
@@ -1178,6 +1344,17 @@ void JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfter
 	SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 }
 
+void JS_Window_Update(HWND windowHWND)
+{
+	UpdateWindow(windowHWND);
+}
+
+bool JS_Window_InvalidateRect(HWND windowHWND, int left, int top, int right, int bottom, bool eraseBackground)
+{
+	RECT rect{ left, top, right, bottom };
+	return InvalidateRect(windowHWND, &rect, (BOOL)eraseBackground);
+}
+
 bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 {
 	// Opacity can only be applied to top-level framed windows, AFAIK, and in Linux, REAPER crashes if opacity is applied to a child window.
@@ -1295,25 +1472,18 @@ bool  JS_Window_IsWindow(void* windowHWND)
 	// If a match is found, target will be replaced with NULL;
 	if (!windowHWND) return false;
 	HWND target = (HWND)windowHWND;
-	/*bool isFloatingDock;
 
-	if (!windowHWND)
-		return false;
-	else if (DockIsChildOfDock(target, &isFloatingDock) != -1)
-		return true;
-	*/
-
-	/*HWND editor = MIDIEditor_GetActive();
-	if (editor) {
+	HWND editor = MIDIEditor_GetActive();
+	if (editor) 
+	{
 		if (target == editor)
 			return true;
-		else {
-			EnumChildWindows(editor, JS_Window_IsWindow_Callback_Child, reinterpret_cast<LPARAM>(&target));
-			if (!target) return true;
-		}
+		HWND midiview = GetDlgItem(editor, 1000);
+		if (target == midiview)
+			return true;
 	}
 
-	HWND main = GetMainHwnd();
+	/*HWND main = GetMainHwnd();
 	if (main) {
 		if (target == main)
 			return true;
@@ -1336,9 +1506,9 @@ bool JS_WindowMessage_ListIntercepts(void* windowHWND, char* listOutNeedBig, int
 	using namespace Julian;
 	listOutNeedBig[0] = '\0';
 	
-	if (mapWindowToData.count((HWND)windowHWND))
+	if (mapWindowData.count((HWND)windowHWND))
 	{
-		auto& messages = mapWindowToData[(HWND)windowHWND].messages;
+		auto& messages = mapWindowData[(HWND)windowHWND].mapMessages;
 		for (const auto& it : messages)
 		{
 			if (strlen(listOutNeedBig) < (UINT)listOutNeedBig_sz - 32)
@@ -1366,7 +1536,7 @@ bool JS_WindowMessage_ListIntercepts(void* windowHWND, char* listOutNeedBig, int
 		
 }
 
-bool JS_WindowMessage_Post(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh)
+bool JS_WindowMessage_Post(void* windowHWND, const char* message, double wParam, int wParamHighWord, double lParam, int lParamHighWord)
 {
 	using namespace Julian;
 
@@ -1382,28 +1552,34 @@ bool JS_WindowMessage_Post(void* windowHWND, const char* message, int wParamLow,
 		if (endPtr == message || errno != 0) // 0x0000 is a valid message type, so cannot assume 0 is error.
 			return false;
 	}
-
-	WPARAM wParam = MAKEWPARAM(wParamLow, wParamHigh);
-	LPARAM lParam = MAKELPARAM(lParamLow, lParamHigh);
+	
+	WPARAM wP;
+	if (wParamHighWord || ((wParam < 0) && (-(2^15) > wParam))) // WARNING: Negative values (such as mousewheel turns) are not bitwise encoded the same in low WORD vs entire WPARAM. So if small negative, assume that low WORD is intended.
+		wP = MAKEWPARAM(wParam, wParamHighWord);
+	else
+		wP = (WPARAM)(int64_t)wParam;
+		
+	LPARAM lP;
+	if (lParamHighWord || ((lParam < 0) && (-(2 ^ 15) > lParam)))
+		lP = MAKELPARAM(lParam, lParamHighWord);
+	else
+		lP = (LPARAM)(int64_t)lParam;
+		
 	HWND hwnd = (HWND)windowHWND;
 
 	// Is this window currently being intercepted?
-	if (mapWindowToData.count(hwnd)) {
-		sWindowData& w = mapWindowToData[hwnd];
-		if (w.messages.count(uMsg)) {
-			w.origProc(hwnd, uMsg, wParam, lParam); // WindowProcs usually return 0 if message was handled.  But not always, 
+	if (mapWindowData.count(hwnd)) {
+		sWindowData& w = mapWindowData[hwnd];
+		if (w.mapMessages.count(uMsg)) {
+			w.origProc(hwnd, uMsg, wP, lP); // WindowProcs usually return 0 if message was handled.  But not always, 
 			return true;
 		}
 	}
-	return !!PostMessage(hwnd, uMsg, wParam, lParam);
+	return !!PostMessage(hwnd, uMsg, wP, lP);
 }
 
-bool JS_Window_OnCommand(void* windowHWND, int commandID)
-{
-	return JS_WindowMessage_Post(windowHWND, "WM_COMMAND", commandID, 0, 0, 0);
-}
 
-int JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, int wParamHigh, int lParamLow, int lParamHigh)
+int JS_WindowMessage_Send(void* windowHWND, const char* message, double wParam, int wParamHighWord, double lParam, int lParamHighWord)
 {
 	using namespace Julian;
 
@@ -1419,11 +1595,20 @@ int JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, 
 		if (endPtr == message || errno != 0) // 0x0000 is a valid message type, so cannot assume 0 is error.
 			return FALSE;
 	}
+	
+	WPARAM wP;
+	if (wParamHighWord || ((wParam < 0) && (-(2 ^ 15) > wParam))) // WARNING: Negative values (such as mousewheel turns) are not bitwise encoded the same in low WORD vs entire WPARAM. So if small negative, assume that low WORD is intended.
+		wP = MAKEWPARAM(wParam, wParamHighWord);
+	else
+		wP = (WPARAM)(int64_t)wParam;
 
-	WPARAM wParam = MAKEWPARAM(wParamLow, wParamHigh);
-	LPARAM lParam = MAKELPARAM(lParamLow, lParamHigh);
+	LPARAM lP;
+	if (lParamHighWord || ((lParam < 0) && (-(2 ^ 15) > lParam)))
+		lP = MAKELPARAM(lParam, lParamHighWord);
+	else
+		lP = (LPARAM)(int64_t)lParam;
 
-	return (int)SendMessage((HWND)windowHWND, uMsg, wParam, lParam);
+	return (int)SendMessage((HWND)windowHWND, uMsg, wP, lP);
 }
 
 // swell does not define these macros:
@@ -1434,6 +1619,11 @@ int JS_WindowMessage_Send(void* windowHWND, const char* message, int wParamLow, 
 #define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))
 #endif
 
+
+bool JS_Window_OnCommand(void* windowHWND, int commandID)
+{
+	return JS_WindowMessage_Post(windowHWND, "WM_COMMAND", commandID, 0, 0, 0);
+}
 
 
 bool JS_WindowMessage_Peek(void* windowHWND, const char* message, bool* passedThroughOut, double* timeOut, int* wParamLowOut, int* wParamHighOut, int* lParamLowOut, int* lParamHighOut)
@@ -1454,13 +1644,13 @@ bool JS_WindowMessage_Peek(void* windowHWND, const char* message, bool* passedTh
 			return false;
 	}
 
-	if (mapWindowToData.count((HWND)windowHWND))
+	if (mapWindowData.count((HWND)windowHWND))
 	{
-		sWindowData& w = mapWindowToData[(HWND)windowHWND];
+		sWindowData& w = mapWindowData[(HWND)windowHWND];
 
-		if (w.messages.count(uMsg))
+		if (w.mapMessages.count(uMsg))
 		{
-			sMsgData& m = w.messages[uMsg];
+			sMsgData& m = w.mapMessages[uMsg];
 
 			*passedThroughOut = m.passthrough;
 			*timeOut		= m.time;
@@ -1480,62 +1670,75 @@ LRESULT CALLBACK JS_WindowMessage_Intercept_Callback(HWND hwnd, UINT uMsg, WPARA
 	using namespace Julian;
 
 	// If not in map, we don't know how to call original process.
-	if (mapWindowToData.count(hwnd) == 0)
+	if (mapWindowData.count(hwnd) == 0)
 		return 1;
+	else {
+		sWindowData& windowData = mapWindowData[hwnd]; // Get reference/alias because want to write into existing struct.
 
-	sWindowData& windowData = mapWindowToData[hwnd]; // Get reference/alias because want to write into existing struct.
-
-	// Always get KEYDOWN and KEYUP, to construct keyboard bitfields
-	/*
-	if (uMsg == WM_KEYDOWN)
-	{
-		if ((wParam >= 0x41) && (wParam <= VK_SLEEP)) // A to SLEEP in virtual key codes
-			windowData.keysBitfieldAtoSLEEP |= (1 << (wParam - 0x41));
-		else if ((wParam >= VK_LEFT) && (wParam <= 0x39)) // LEFT to 9 in virtual key codes
-			windowData.keysBitfieldLEFTto9 |= (1 << (wParam - VK_LEFT));
-		else if ((wParam >= VK_BACK) && (wParam <= VK_HOME)) // BACKSPACE to HOME in virtual key codes
-			windowData.keysBitfieldLEFTto9 |= (1 << (wParam - VK_BACK));
-	}
-
-	else if (uMsg == WM_KEYUP)
-	{
-		if ((wParam >= 0x41) && (wParam <= VK_SLEEP)) // A to SLEEP in virtual key codes
-			windowData.keysBitfieldAtoSLEEP &= !(1 << (wParam - 0x41));
-		else if ((wParam >= VK_LEFT) && (wParam <= 0x39)) // LEFT to 9 in virtual key codes
-			windowData.keysBitfieldLEFTto9 &= !(1 << (wParam - VK_LEFT));
-		else if ((wParam >= VK_BACK) && (wParam <= VK_HOME)) // BACKSPACE to HOME in virtual key codes
-			windowData.keysBitfieldBACKtoHOME &= !(1 << (wParam - VK_BACK));
-	}
-	*/
-
-	// Event that should be intercepted? 
-	if (windowData.messages.count(uMsg)) // ".contains" has only been implemented in more recent C++ versions
-	{
-		windowData.messages[uMsg].time = time_precise();
-		windowData.messages[uMsg].wParam = wParam;
-		windowData.messages[uMsg].lParam = lParam;
-
-		// If event will not be passed through, can quit here.
-		if (windowData.messages[uMsg].passthrough == false)
+		// Event that should be intercepted? 
+		if (windowData.mapMessages.count(uMsg)) // ".contains" has only been implemented in more recent C++ versions
 		{
-			// Most WM_ messages return 0 if processed, with only a few exceptions:
-			switch (uMsg)
+			windowData.mapMessages[uMsg].time = time_precise();
+			windowData.mapMessages[uMsg].wParam = wParam;
+			windowData.mapMessages[uMsg].lParam = lParam;
+
+			// If event will not be passed through, can quit here.
+			if (windowData.mapMessages[uMsg].passthrough == false)
 			{
-			case WM_SETCURSOR:
-			case WM_DRAWITEM:
-			case WM_COPYDATA:
-				return 1;
-			case WM_MOUSEACTIVATE:
-				return 3;
-			default:
-				return 0;
+				// Most WM_ messages return 0 if processed, with only a few exceptions:
+				switch (uMsg)
+				{
+				case WM_SETCURSOR:
+				case WM_DRAWITEM:
+				case WM_COPYDATA:
+					return 1;
+				case WM_MOUSEACTIVATE:
+					return 3;
+				default:
+					return 0;
+				}
 			}
 		}
-	}
 
-	// Any other event that isn't intercepted.
-	return windowData.origProc(hwnd, uMsg, wParam, lParam);
+		// Any other event that isn't intercepted.
+		LRESULT r = windowData.origProc(hwnd, uMsg, wParam, lParam);
+
+		if (uMsg == WM_PAINT) {
+			if (!windowData.mapBitmaps.empty()) {
+				HDC windowDC = GetDC(hwnd);
+				if (windowDC) {
+					for (auto& b : windowData.mapBitmaps) {
+						if (LICEBitmaps.count(b.first)) {
+							HDC& bitmapDC = LICEBitmaps[b.first];
+							if (bitmapDC) {
+								sBitmapData& i = b.second;
+								RECT r{ i.dstx, i.dsty, i.dstw, i.dsth };
+								if (i.dstw == -1 || i.dsth == -1) {
+									GetClientRect(hwnd, &r);
+									if (i.dstw != -1) {
+										r.left = i.dstx; r.right = i.dsty;
+									}
+									else if (i.dsth != -1) {
+										r.top = i.dsty; r.bottom = i.dsth;
+									}
+								}
+#ifdef _WIN32
+								AlphaBlend(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
+#else
+								StretchBlt(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, SRCCOPY_USEALPHACHAN);
+#endif
+							}
+						}
+					}
+					ReleaseDC(hwnd, windowDC);
+				}
+			}
+		}
+
+		return r;
+	}
 }
+
 
 // Intercept a single message type
 int JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passthrough)
@@ -1559,30 +1762,37 @@ int JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passt
 	// Is this window already being intercepted?
 
 	// Not yet intercepted, so create new sWindowdata map
-	if (Julian::mapWindowToData.count(hwnd) == 0) 
+	if (Julian::mapWindowData.count(hwnd) == 0) 
 	{
+		if (!JS_Window_IsWindow(hwnd)) 
+			return ERR_NOT_WINDOW;
+
+		HDC windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
+		if (!windowDC) 
+			return ERR_WINDOW_HDC;
+
 		// Try to get the original process.
 		WNDPROC origProc = nullptr;
 		#ifdef _WIN32
-				origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 		#else
-				origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 		#endif
-		if (!origProc)
+		if (!origProc) 
 			return ERR_ORIGPROC;
 
-		Julian::mapWindowToData.emplace(hwnd, sWindowData{ origProc, map<UINT,sMsgData>{ } }); // Insert empty map
+		Julian::mapWindowData.emplace(hwnd, sWindowData{ origProc }); // , map<UINT, sMsgData>{}, map<LICE_IBitmap*, sBitmapData>{} }); // Insert empty map
 	}
 
 	// Window already intercepted.  So try to add to existing maps.
 	else
 	{
 		// Check that no overlaps: only one script may intercept each message type
-		if (Julian::mapWindowToData[hwnd].messages.count(uMsg))
+		if (Julian::mapWindowData[hwnd].mapMessages.count(uMsg))
 			return ERR_ALREADY_INTERCEPTED;
 	}
 
-	Julian::mapWindowToData[hwnd].messages.emplace(uMsg, sMsgData{ passthrough, 0, 0, 0 });
+	Julian::mapWindowData[hwnd].mapMessages.emplace(uMsg, sMsgData{ passthrough, 0, 0, 0 });
 	return 1;
 }
 
@@ -1593,7 +1803,7 @@ int JS_WindowMessage_PassThrough(void* windowHWND, const char* message, bool pas
 	UINT uMsg;
 
 	// Is this window already being intercepted?
-	if (Julian::mapWindowToData.count(hwnd) == 0)
+	if (Julian::mapWindowData.count(hwnd) == 0)
 		return ERR_ALREADY_INTERCEPTED; // Actually, NOT intercepted
 
 	// Convert string to UINT
@@ -1609,11 +1819,11 @@ int JS_WindowMessage_PassThrough(void* windowHWND, const char* message, bool pas
 	}
 
 	// Is this message type actually already being intercepted?
-	if (Julian::mapWindowToData[hwnd].messages.count(uMsg) == 0)
+	if (Julian::mapWindowData[hwnd].mapMessages.count(uMsg) == 0)
 		return ERR_ALREADY_INTERCEPTED;
 
 	// Change passthrough
-	Julian::mapWindowToData[hwnd].messages[uMsg].passthrough = passThrough;
+	Julian::mapWindowData[hwnd].mapMessages[uMsg].passthrough = passThrough;
 
 	return 1;
 }
@@ -1622,12 +1832,6 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 {
 	using namespace Julian;
 	HWND hwnd = (HWND)windowHWND;
-
-	// IsWindow is slow in Linux and MacOS. 
-	// However, checking may be prudent this may be necessary since Linux will crash if windowHWND is not an actual window.
-	// Hopefully, JS_Window_InterceptList will not be called many times per script. 
-	if (!JS_Window_IsWindow(hwnd))
-		return ERR_NOT_WINDOW;
 
 	// strtok *replaces* characters in the string, so better copy messages to new char array.
 	// It should not be possible for API functions to pass more than API_LEN characters.  But make doubly sure...
@@ -1684,12 +1888,21 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 	}
 
 	// Parsing went OK?  Any messages to intercept?
-	if (newMessages.size() == 0)
+	if (newMessages.empty())
 		return ERR_PARSING;
 
 	// Is this window already being intercepted?
-	if (mapWindowToData.count(hwnd) == 0) // Not yet intercepted
+	if (mapWindowData.count(hwnd) == 0) // Not yet intercepted
 	{
+		// IsWindow is slow in Linux and MacOS. 
+		// However, checking may be prudent this may be necessary since Linux will crash if windowHWND is not an actual window.
+		if (!JS_Window_IsWindow(hwnd)) 
+			return ERR_NOT_WINDOW;
+
+		HDC windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
+		if (!windowDC) 
+			return ERR_WINDOW_HDC;
+
 		// Try to get the original process.
 		WNDPROC origProc = nullptr;
 #ifdef _WIN32
@@ -1697,11 +1910,11 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 #else
 		origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 #endif
-		if (!origProc)
+		if (!origProc) 
 			return ERR_ORIGPROC;
 
 		// Got everything OK.  Finally, store struct.
-		Julian::mapWindowToData.emplace(hwnd, sWindowData{ origProc, newMessages }); // Insert into static map of namespace
+		Julian::mapWindowData.emplace(hwnd, sWindowData{ origProc, newMessages }); // Insert into static map of namespace
 		return 1;
 	}
 
@@ -1710,7 +1923,7 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 	{
 		// Check that no overlaps: only one script may intercept each message type
 		// Want to update existing map, so use aliases/references
-		auto& existingMsg = Julian::mapWindowToData[hwnd].messages; // Messages that are already being intercepted for this window
+		auto& existingMsg = Julian::mapWindowData[hwnd].mapMessages; // Messages that are already being intercepted for this window
 		for (const auto& it : newMessages)
 		{
 			if (existingMsg.count(it.first)) // Oops, already intercepting this message type
@@ -1729,7 +1942,7 @@ int JS_WindowMessage_Release(void* windowHWND, const char* messages)
 	using namespace Julian;
 	HWND hwnd = (HWND)windowHWND;
 
-	if (mapWindowToData.count(hwnd) == 0)
+	if (mapWindowData.count(hwnd) == 0)
 		return ERR_NOT_WINDOW;
 
 	// strtok *replaces* characters in the string, so better copy messages to new char array.
@@ -1767,56 +1980,60 @@ int JS_WindowMessage_Release(void* windowHWND, const char* messages)
 	}
 
 	// Erase all message types that have been parsed
-	auto& existingMessages = Julian::mapWindowToData[hwnd].messages; // Messages that are already being intercepted for this window
-	for (const UINT it : messagesToErase)
+	auto& existingMessages = Julian::mapWindowData[hwnd].mapMessages; // Messages that are already being intercepted for this window
+	for (const UINT& it : messagesToErase)
 		existingMessages.erase(it);
 
 	// If no messages need to be intercepted any more, release this window
-	if (existingMessages.size() == 0)
-		JS_WindowMessage_ReleaseWindow(hwnd);
+	if (existingMessages.empty() && mapWindowData[hwnd].mapBitmaps.empty())
+		JS_WindowMessage_RestoreOrigProc(hwnd);
 
 	return TRUE;
-}
-
-void JS_WindowMessage_ReleaseWindow(void* windowHWND)
-{
-	using namespace Julian;
-
-	if (mapWindowToData.count((HWND)windowHWND))
-	{
-		WNDPROC origProc = mapWindowToData[(HWND)windowHWND].origProc;
-		if (JS_Window_IsWindow(windowHWND))
-#ifdef _WIN32
-			SetWindowLongPtr((HWND)windowHWND, GWLP_WNDPROC, (LONG_PTR)origProc);
-#else
-			SetWindowLong((HWND)windowHWND, GWL_WNDPROC, (LONG_PTR)origProc);
-#endif
-		mapWindowToData.erase((HWND)windowHWND);
-	}
 }
 
 void JS_WindowMessage_ReleaseAll()
 {
 	using namespace Julian;
-	for (auto it = mapWindowToData.begin(); it != mapWindowToData.end(); ++it)
-	{
-		HWND hwnd = it->first;
-		WNDPROC origProc = it->second.origProc;
-		if (JS_Window_IsWindow(hwnd))
+	for (auto it = mapWindowData.begin(); it != mapWindowData.end(); ++it) {
+		JS_WindowMessage_ReleaseWindow(it->first);
+	}
+}
+
+void JS_WindowMessage_ReleaseWindow(void* windowHWND)
+{
+	using namespace Julian;
+	HWND hwnd = (HWND)windowHWND;
+	if (mapWindowData.count(hwnd)) {
+		if (mapWindowData[hwnd].mapBitmaps.empty()) JS_WindowMessage_RestoreOrigProc(hwnd); // no linked bitmaps either, so can restore original WNDPROC
+		else mapWindowData[hwnd].mapMessages.clear(); // delete intercepts, but leave linked bitmaps alone
+	}
+}
+
+static void JS_WindowMessage_RestoreOrigProc(HWND hwnd)
+{
+	using namespace Julian;
+
+	if (mapWindowData.count(hwnd)) {
+		if (JS_Window_IsWindow(hwnd)) {
+			WNDPROC origProc = mapWindowData[hwnd].origProc;
 #ifdef _WIN32
 			SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
 #else
 			SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
 #endif
+		}
+		mapWindowData.erase(hwnd);
 	}
-	mapWindowToData.clear();
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// Mouse functions
 
 int JS_Mouse_GetState(int flags)
 {
 	int state = 0;
-	if (flags & 1)	 if (GetAsyncKeyState(VK_LBUTTON) >> 1)	state |= 1; 
+	if (flags & 1)	 if (GetAsyncKeyState(VK_LBUTTON) >> 1)	state |= 1;
 	if (flags & 2)	 if (GetAsyncKeyState(VK_RBUTTON) >> 1)	state |= 2;
 	if (flags & 64)  if (GetAsyncKeyState(VK_MBUTTON) >> 1)	state |= 64;
 	if (flags & 4)	 if (GetAsyncKeyState(VK_CONTROL) >> 1)	state |= 4;
@@ -1825,6 +2042,32 @@ int JS_Mouse_GetState(int flags)
 	if (flags & 32)  if (GetAsyncKeyState(VK_LWIN) >> 1)	state |= 32;
 	return state;
 }
+/*
+int JS_Mouse_GetHistory(int flags)
+{
+	int state = 0;
+	if (VK_BitmapHistory[VK_LBUTTON]) state |= 1;
+	if (VK_BitmapHistory[VK_RBUTTON]) state |= 2;
+	if (VK_BitmapHistory[VK_MBUTTON]) state |= 64;
+	if (VK_BitmapHistory[VK_CONTROL]) state |= 4;
+	if (VK_BitmapHistory[VK_SHIFT]) state |= 8;
+	if (VK_BitmapHistory[VK_MENU]) state |= 16;
+	if (VK_BitmapHistory[VK_LWIN]) state |= 32;
+	state = state & flags;
+	return state;
+}
+
+void JS_Mouse_ClearHistory()
+{
+	VK_BitmapHistory[VK_LBUTTON] = 0;
+	VK_BitmapHistory[VK_RBUTTON] = 0;
+	VK_BitmapHistory[VK_MBUTTON] = 0;
+	VK_BitmapHistory[VK_CONTROL] = 0;
+	VK_BitmapHistory[VK_SHIFT] = 0;
+	VK_BitmapHistory[VK_MENU] = 0;
+	VK_BitmapHistory[VK_LWIN] = 0;
+}
+*/
 
 bool JS_Mouse_SetPosition(int x, int y)
 {
@@ -1880,22 +2123,31 @@ void JS_Mouse_SetCursor(void* cursorHandle)
 
 void* JS_GDI_GetClientDC(void* windowHWND)
 {
-	return GetDC((HWND)windowHWND);
+	HDC dc = GetDC((HWND)windowHWND);
+	if (dc) Julian::GDIHDCs.emplace(dc);
+	return dc;
 }
 
 void* JS_GDI_GetWindowDC(void* windowHWND)
 {
-	return GetWindowDC((HWND)windowHWND);
+	HDC dc = GetWindowDC((HWND)windowHWND);
+	if (dc) Julian::GDIHDCs.emplace(dc);
+	return dc;
 }
 
 void* JS_GDI_GetScreenDC()
 {
-	return GetDC(NULL);
+	HDC dc = GetDC(NULL);
+	if (dc) Julian::GDIHDCs.emplace(dc);
+	return dc;
 }
 
 void JS_GDI_ReleaseDC(void* windowHWND, void* deviceHDC)
 {
-	ReleaseDC((HWND)windowHWND, (HDC)deviceHDC);
+	if (Julian::GDIHDCs.count((HDC)deviceHDC)) {
+		Julian::GDIHDCs.erase((HDC)deviceHDC);
+		ReleaseDC((HWND)windowHWND, (HDC)deviceHDC);
+	}
 }
 
 
@@ -2061,14 +2313,28 @@ void JS_GDI_SetPixel(void* deviceHDC, int x, int y, int color)
 
 
 
-void JS_GDI_Blit(void* destHDC, int dstx, int dsty, void* sourceHDC, int srcx, int srcy, int width, int height)
+void JS_GDI_Blit(void* destHDC, int dstx, int dsty, void* sourceHDC, int srcx, int srcy, int width, int height, const char* modeOptional)
 {
-	BitBlt((HDC)destHDC, dstx, dsty, width, height, (HDC)sourceHDC, srcx, srcy, SRCCOPY);  //swell only provdes the SRCCOPY mode.  NB: swell defines SRCCOPY as 0 instead of HCC0020
+	if (strchr(modeOptional, 'A') || strchr(modeOptional, 'a'))
+#ifdef _WIN32
+		AlphaBlend((HDC)destHDC, dstx, dsty, width, height, (HDC)sourceHDC, srcx, srcy, width, height, BLENDFUNCTION { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
+#else
+		StretchBlt((HDC)destHDC, dstx, dsty, width, height, (HDC)sourceHDC, srcx, srcy, width, height, SRCCOPY_USEALPHACHAN);
+#endif
+	else
+		StretchBlt((HDC)destHDC, dstx, dsty, width, height, (HDC)sourceHDC, srcx, srcy, width, height, SRCCOPY);
 }
 
-void JS_GDI_StretchBlit(void* destHDC, int dstx, int dsty, int dstw, int dsth, void* sourceHDC, int srcx, int srcy, int srcw, int srch)
+void JS_GDI_StretchBlit(void* destHDC, int dstx, int dsty, int dstw, int dsth, void* sourceHDC, int srcx, int srcy, int srcw, int srch, const char* modeOptional)
 {
-	StretchBlt((HDC)destHDC, dstx, dsty, dstw, dsth, (HDC)sourceHDC, srcx, srcy, srcw, srch, SRCCOPY);
+	if (strchr(modeOptional, 'A') || strchr(modeOptional, 'a'))
+#ifdef _WIN32
+		AlphaBlend((HDC)destHDC, dstx, dsty, dstw, dsth, (HDC)sourceHDC, srcx, srcy, srcw, srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
+#else
+		StretchBlt((HDC)destHDC, dstx, dsty, dstw, dsth, (HDC)sourceHDC, srcx, srcy, srcw, srch, SRCCOPY_USEALPHACHAN);
+#endif
+	else
+		StretchBlt((HDC)destHDC, dstx, dsty, dstw, dsth, (HDC)sourceHDC, srcx, srcy, srcw, srch, SRCCOPY);
 }
 
 
@@ -2109,37 +2375,146 @@ bool JS_Window_SetScrollPos(void* windowHWND, const char* scrollbar, int positio
 	return isOK;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Functions for compositing into REAPER's UI
+
+int JS_Composite(HWND hwnd, int dstx, int dsty, int dstw, int dsth, LICE_IBitmap* sysBitmap, int srcx, int srcy, int srcw, int srch)
+{
+	using namespace Julian;
+	if (!LICEBitmaps.count(sysBitmap)) return ERR_NOT_BITMAP;
+	HDC bitmapDC = LICEBitmaps[sysBitmap]; if (!bitmapDC) return ERR_NOT_SYSBITMAP; // Is this a sysbitmap?
+
+	// If window not already intercepted, get original window proc and emplace new struct
+	if (mapWindowData.count(hwnd) == 0) {
+		if (!JS_Window_IsWindow(hwnd)) return ERR_NOT_WINDOW;
+		
+		//!!HDC windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
+		//!!if (!windowDC) return ERR_WINDOW_HDC;
+		
+		WNDPROC origProc = nullptr;
+#ifdef _WIN32
+		origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+#else
+		origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+#endif
+		if (!origProc) return ERR_ORIGPROC;
+		
+		mapWindowData.emplace(hwnd, sWindowData{ origProc });
+	}
+
+	// OK, hwnd should now be in map
+	mapWindowData[hwnd].mapBitmaps.emplace(sysBitmap, sBitmapData{ dstx, dsty, dstw, dsth, srcx, srcy, srcw, srch });
+	return 1;
+}
+
+/*
+if (LICEBitmaps.count(sysBitmap)) {
+HDC bitmapDC = LICEBitmaps[sysBitmap];
+if (bitmapDC) { // Is this a sysbitmap?
+if (mapWindowData.count(hwnd) == 0) { // If window not already intercepted, get original window proc and emplace new struct
+if (JS_Window_IsWindow(hwnd)) {
+WNDPROC origProc = nullptr;
+#ifdef _WIN32
+origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+#else
+origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+#endif
+if (origProc)
+mapWindowData.emplace(hwnd, sWindowData{ origProc });
+}
+}
+if (mapWindowData.count(hwnd)) { // OK, hwnd should now be in map
+HDC windowDC = nullptr;
+if (mapWindowData[hwnd].mapBitmaps.count(sysBitmap))
+windowDC = mapWindowData[hwnd].mapBitmaps[sysBitmap].windowDC;
+else
+windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
+
+if (windowDC) {
+mapWindowData[hwnd].mapBitmaps.emplace(sysBitmap, sBitmapData{ windowDC, dstx, dsty, dstw, dsth, bitmapDC, srcx, srcy, srcw, srch });
+return 1;
+}
+}
+}
+}
+return false;
+}*/
+
+void JS_Composite_Unlink(HWND hwnd, LICE_IBitmap* bitmap)
+{
+	using namespace Julian;
+	if (mapWindowData.count(hwnd)) {
+		mapWindowData[hwnd].mapBitmaps.erase(bitmap);
+		if (mapWindowData[hwnd].mapBitmaps.empty() && mapWindowData[hwnd].mapMessages.empty() == 0) {
+			JS_WindowMessage_RestoreOrigProc(hwnd);
+		}
+	}
+
+}
+
+int JS_Composite_ListBitmaps(HWND hwnd, char* listOutNeedBig, int listOutNeedBig_sz)
+{
+	using namespace Julian;
+	if (mapWindowData.count(hwnd) == 0) return 0;
+	std::set<HWND> bitmaps; // Use the helper function that was originally meant for listing window HWNDs.
+	for (auto& m : mapWindowData[hwnd].mapBitmaps) bitmaps.emplace((HWND)m.first);
+	return ConvertSetHWNDToString(bitmaps, listOutNeedBig, listOutNeedBig_sz);
+}
 
 /////////////////////////////////////////////
 
 void* JS_LICE_CreateBitmap(bool isSysBitmap, int width, int height)
 {
 	LICE_IBitmap* bm = LICE_CreateBitmap((BOOL)isSysBitmap, width, height); // If SysBitmap, can BitBlt to/from screen like HDC.
-	if (bm) 
-		Julian::LICEBitmaps.emplace(bm);
+	// Immediately get HDC and store, so that all scripts can use the same HDC.
+	if (bm) {
+		HDC dc = LICE__GetDC(bm);
+		Julian::LICEBitmaps.emplace(bm, dc);
+	}
 	return bm;
 }
 
 int JS_LICE_GetHeight(void* bitmap)
 {
-	return LICE__GetHeight((LICE_IBitmap*)bitmap);
+	using namespace Julian;
+	if (LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return LICE__GetHeight((LICE_IBitmap*)bitmap);
+	else 
+		return 0;
 }
 
 int JS_LICE_GetWidth(void* bitmap)
 {
-	return LICE__GetWidth((LICE_IBitmap*)bitmap);
+	using namespace Julian;
+	if (LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return LICE__GetWidth((LICE_IBitmap*)bitmap);
+	else
+		return 0;
 }
 
 void* JS_LICE_GetDC(void* bitmap)
 {
-	return LICE__GetDC((LICE_IBitmap*)bitmap);
+	using namespace Julian;
+	if (LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return LICEBitmaps[(LICE_IBitmap*)bitmap];
+	else
+		return nullptr;
 }
 
-void JS_LICE_DestroyBitmap(void* bitmap)
+
+void JS_LICE_DestroyBitmap(LICE_IBitmap* bitmap)
 {
-	Julian::LICEBitmaps.erase((LICE_IBitmap*)bitmap);
-	LICE__Destroy((LICE_IBitmap*)bitmap);
+	using namespace Julian;
+	// Also delete any occurence of this bitmap from UI Compositing
+	if (LICEBitmaps.count(bitmap)) {
+		for (auto& m : mapWindowData) {
+			m.second.mapBitmaps.erase(bitmap);
+		}
+		LICEBitmaps.erase(bitmap);
+		LICE__Destroy(bitmap);
+	}
 }
+
 
 #define LICE_BLIT_MODE_MASK 0xff
 #define LICE_BLIT_MODE_COPY 0
@@ -2165,51 +2540,79 @@ void JS_LICE_DestroyBitmap(void* bitmap)
 void JS_LICE_Blit(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height, double alpha, const char* mode)
 {	
 	GETINTMODE
-	LICE_Blit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+		LICE_Blit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height, (float)alpha, intMode);
 }
 
 void JS_LICE_RotatedBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double angle, double rotxcent, double rotycent, bool cliptosourcerect, double alpha, const char* mode)
 {
 	GETINTMODE	
-	LICE_RotatedBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)angle, cliptosourcerect, (float)alpha, intMode, (float)rotxcent, (float)rotycent);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+		LICE_RotatedBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)angle, cliptosourcerect, (float)alpha, intMode, (float)rotxcent, (float)rotycent);
 }
 
 void JS_LICE_ScaledBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double alpha, const char* mode)
 {
 	GETINTMODE
-	LICE_ScaledBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+		LICE_ScaledBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)alpha, intMode);
 }
 
 void* JS_LICE_LoadPNG(const char* filename)
 {
-	return LICE_LoadPNG(filename, NULL); // In order to force the use of SysBitmaps, use must supply bitmap
+	LICE_IBitmap* sysbitmap = nullptr;
+	LICE_IBitmap* png = nullptr;
+	sysbitmap = LICE_CreateBitmap(TRUE, 1, 1); // By default, does not return a SysBitmap. In order to force the use of SysBitmaps, use must supply own bitmap.
+	if (sysbitmap) {
+		png = LICE_LoadPNG(filename, sysbitmap);
+		if (png != sysbitmap) LICE__Destroy(sysbitmap);
+		if (png) {
+			HDC dc = LICE__GetDC(png);
+			Julian::LICEBitmaps.emplace(png, dc);
+		}
+	}
+	return png;
 }
+
+/*bool JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha)
+{
+	return LICE_WritePNG(filename, bitmap, wantAlpha);
+}*/
 
 void JS_LICE_Circle(void* bitmap, double cx, double cy, double r, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	LICE_Circle((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, (LICE_pixel)color, (float)alpha, intMode, antialias);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_Circle((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
 bool JS_LICE_IsFlipped(void* bitmap)
 {
-	return LICE__IsFlipped((LICE_IBitmap*)bitmap);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return LICE__IsFlipped((LICE_IBitmap*)bitmap);
+	else
+		return false;
 }
 
 bool JS_LICE_Resize(void* bitmap, int width, int height)
 {
-	return LICE__resize((LICE_IBitmap*)bitmap, width, height);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return LICE__resize((LICE_IBitmap*)bitmap, width, height);
+	else
+		return false;
 }
 
 void JS_LICE_Arc(void* bitmap, double cx, double cy, double r, double minAngle, double maxAngle, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	LICE_Arc((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, (float)minAngle, (float)maxAngle, (LICE_pixel)color, (float)alpha, intMode, antialias);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_Arc((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, (float)minAngle, (float)maxAngle, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
 void JS_LICE_Clear(void* bitmap, int color)
 {
-	LICE_Clear((LICE_IBitmap*)bitmap, (LICE_pixel)color);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_Clear((LICE_IBitmap*)bitmap, (LICE_pixel)color);
 }
 
 
@@ -2265,13 +2668,17 @@ void JS_LICE_SetFontColor(void* LICEFont, int color)
 int JS_LICE_DrawText(void* bitmap, void* LICEFont, const char* text, int textLen, int x1, int y1, int x2, int y2)
 {
 	RECT r{ x1, y1, x2, y2 };
-	return LICE__DrawText((LICE_IFont*)LICEFont, (LICE_IBitmap*)bitmap, text, textLen, &r, 0); // I don't know what UINT dtFlags does, so make 0.
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return LICE__DrawText((LICE_IFont*)LICEFont, (LICE_IBitmap*)bitmap, text, textLen, &r, 0); // I don't know what UINT dtFlags does, so make 0.
+	else
+		return 0;
 }
 
 void JS_LICE_DrawChar(void* bitmap, int x, int y, char c, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	LICE_DrawChar((LICE_IBitmap*)bitmap, x, y, c, (LICE_pixel)color, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_DrawChar((LICE_IBitmap*)bitmap, x, y, c, (LICE_pixel)color, (float)alpha, intMode);
 }
 
 void JS_LICE_MeasureText(const char* string, int* widthOut, int* heightOut)
@@ -2279,67 +2686,75 @@ void JS_LICE_MeasureText(const char* string, int* widthOut, int* heightOut)
 	LICE_MeasureText(string, widthOut, heightOut);
 }
 
-
 void JS_LICE_FillRect(void* bitmap, int x, int y, int w, int h, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	LICE_FillRect((LICE_IBitmap*)bitmap, x, y, w, h, (LICE_pixel)color, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_FillRect((LICE_IBitmap*)bitmap, x, y, w, h, (LICE_pixel)color, (float)alpha, intMode);
 }
 
 void JS_LICE_RoundRect(void* bitmap, double x, double y, double w, double h, int cornerradius, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	LICE_RoundRect((LICE_IBitmap*)bitmap, (float)x, (float)y, (float)w, (float)h, cornerradius, color, (float)alpha, intMode, antialias);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_RoundRect((LICE_IBitmap*)bitmap, (float)x, (float)y, (float)w, (float)h, cornerradius, color, (float)alpha, intMode, antialias);
 }
-
 
 void JS_LICE_GradRect(void* bitmap, int dstx, int dsty, int dstw, int dsth, double ir, double ig, double ib, double ia, double drdx, double dgdx, double dbdx, double dadx, double drdy, double dgdy, double dbdy, double dady, const char* mode)
 {
 	GETINTMODE
-	LICE_GradRect((LICE_IBitmap*)bitmap, dstx, dsty, dstw, dsth, (float)ir, (float)ig, (float)ib, (float)ia, (float)drdx, (float)dgdx, (float)dbdx, (float)dadx, (float)drdy, (float)dgdy, (float)dbdy, (float)dady, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_GradRect((LICE_IBitmap*)bitmap, dstx, dsty, dstw, dsth, (float)ir, (float)ig, (float)ib, (float)ia, (float)drdx, (float)dgdx, (float)dbdx, (float)dadx, (float)drdy, (float)dgdy, (float)dbdy, (float)dady, intMode);
 }
 
 void JS_LICE_FillTriangle(void* bitmap, int x1, int y1, int x2, int y2, int x3, int y3, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	LICE_FillTriangle((LICE_IBitmap*)bitmap, x1, y1, x2, y2, x3, y3, color, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_FillTriangle((LICE_IBitmap*)bitmap, x1, y1, x2, y2, x3, y3, color, (float)alpha, intMode);
 }
 
 void JS_LICE_FillPolygon(void* bitmap, const char* packedX, const char* packedY, int numPoints, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	LICE_FillConvexPolygon((LICE_IBitmap*)bitmap, (int32_t*)packedX, (int32_t*)packedY, numPoints, color, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_FillConvexPolygon((LICE_IBitmap*)bitmap, (int32_t*)packedX, (int32_t*)packedY, numPoints, color, (float)alpha, intMode);
 }
 
 void JS_LICE_FillCircle(void* bitmap, double cx, double cy, double r, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	LICE_FillCircle((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, color, (float)alpha, intMode, antialias);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_FillCircle((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, color, (float)alpha, intMode, antialias);
 }
-
 
 void JS_LICE_Line(void* bitmap, double x1, double y1, double x2, double y2, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	LICE_Line((LICE_IBitmap*)bitmap, (float)x1, (float)y1, (float)x2, (float)y2, (LICE_pixel)color, (float)alpha, intMode, antialias);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_Line((LICE_IBitmap*)bitmap, (float)x1, (float)y1, (float)x2, (float)y2, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
 void JS_LICE_Bezier(void* bitmap, double xstart, double ystart, double xctl1, double yctl1, double xctl2, double yctl2, double xend, double yend, double tol, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	LICE_DrawCBezier((LICE_IBitmap*)bitmap, xstart, ystart, xctl1, yctl1, xctl2, yctl2, xend, yend, (LICE_pixel)color, (float)alpha, intMode, antialias, tol);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_DrawCBezier((LICE_IBitmap*)bitmap, xstart, ystart, xctl1, yctl1, xctl2, yctl2, xend, yend, (LICE_pixel)color, (float)alpha, intMode, antialias, tol);
 }
-
 
 int JS_LICE_GetPixel(void* bitmap, int x, int y)
 {
-	return (int)LICE_GetPixel((LICE_IBitmap*)bitmap, x, y);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return (int)LICE_GetPixel((LICE_IBitmap*)bitmap, x, y);
+	else
+		return 0;
 }
 
 void JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	LICE_PutPixel((LICE_IBitmap*)bitmap, x, y, (LICE_pixel)color, (float)alpha, intMode);
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+		LICE_PutPixel((LICE_IBitmap*)bitmap, x, y, (LICE_pixel)color, (float)alpha, intMode);
 }
 
 

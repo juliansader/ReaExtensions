@@ -3,7 +3,7 @@
 #include "WDL/swell/swell.h"
 #include "WDL/swell/swell-internal.h"
 
-bool JS_Window_SetOpacity_ObjC(HWND hwnd, double alpha)
+bool JS_Window_SetOpacity_ObjC(void* hwnd, double alpha)
 {
    if ([(id)hwnd isKindOfClass:[NSWindow class]])
    {
