@@ -77,6 +77,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 	// Does an extension need to do anything when unloading?  
 	// To prevent memory leaks, perhaps try to delete any stuff that may remain in memory?
 	// On Windows, LICE bitmaps are automatically destroyed when REAPER quits, but to make extra sure, this function will destroy them explicitly.
+
 	// Why store stuff in extra sets?  For some unexplained reason REAPER crashes if I try to destroy LICE bitmaps explicitly. And for another unexplained reason, this roundabout way works...
 	else 
 	{
@@ -99,6 +100,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			free(i.first);
 
 		plugin_register("-accelerator", &(Julian::sAccelerator));
+		Xen_DestroyPreviewSystem();
 		return 0;
 	}
 }
@@ -2941,6 +2943,7 @@ inline int getArraySize(double* arr)
 	return r;
 }
 
+// Class that manages both a PCM_sink instance and some helper buffers
 
 class AudioWriter
 {
@@ -2961,6 +2964,8 @@ public:
 		if (m_sink == nullptr)
 			return 0;
 		int nch = m_sink->GetNumChannels();
+		if ((numframes * nch) + offset > getArraySize(data))
+			return 0;
 		if (m_convbuf.size() < numframes*nch)
 			m_convbuf.resize(numframes*nch);
 		for (int i = 0; i < nch; ++i)
@@ -2971,6 +2976,11 @@ public:
 				m_writearraypointers[i][j] = data[(j + offset)*nch + i];
 			}
 		}
+		/*
+		For mysterious reasons, WriteDoubles wants a split audio buffer (array of pointers into mono audio buffers), 
+		which is the reason the helper buffer and copying data into it is needed. Pretty much everything 
+		else in the Reaper API seems to be using interleaved buffers for audio...
+		*/
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
 		return numframes;
 	}
@@ -2992,7 +3002,7 @@ AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samp
 	AudioWriter* aw = new AudioWriter(filename, numchans, samplerate);
 	if (aw->IsReady())
 		return aw;
-	delete aw;
+	delete aw; // sink creation failed, delete created instance and return null
 	return nullptr;
 }
 
@@ -3018,15 +3028,206 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 	int bufsize = getArraySize(destbuf);
 	if (bufsize == 0)
 		return 0;
+	if ((numframes*numchans) + destbufoffset > bufsize)
+		return 0;
 	PCM_source_transfer_t block;
 	memset(&block, 0, sizeof(PCM_source_transfer_t));
 	block.time_s = positioninfile; // seeking in the source is based on seconds
 	block.length = numframes;
-	block.nch = numchans; // the source will attempt to render as many channels as requested
-	block.samplerate = samplerate; // properly implemented sources will resample to requested samplerate
+	block.nch = numchans; // the source should attempt to render as many channels as requested
+	block.samplerate = samplerate; // properly implemented sources should resample to requested samplerate
 	block.samples = &destbuf[destbufoffset];
 	src->GetSamples(&block);
 	return block.samples_out;
+}
+
+class PreviewEntry
+{
+public:
+	PreviewEntry(int id, PCM_source* src, double gain, bool loop)
+	{
+		m_id = id;
+		memset(&m_preg, 0, sizeof(preview_register_t));
+#ifdef WIN32
+		InitializeCriticalSection(&m_preg.cs);
+#else
+        pthread_mutexattr_t mta;
+        pthread_mutexattr_init(&mta);
+        pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
+        pthread_mutex_init(&m_preg.mutex, &mta);
+#endif
+		MediaItem_Take* parent_take = nullptr;
+		for (int i = 0; i < CountMediaItems(nullptr); ++i)
+		{
+			MediaItem* item = GetMediaItem(nullptr, i);
+			for (int j = 0; j < CountTakes(item); ++j)
+			{
+				MediaItem_Take* temptake = GetMediaItemTake(item, j);
+				PCM_source* tempsrc = GetMediaItemTake_Source(temptake);
+				if (tempsrc == src)
+				{
+					parent_take = temptake;
+					break;
+				}
+			}
+			if (parent_take)
+				break;
+		}
+		if (parent_take)
+		{
+			//ShowConsoleMsg("PCM_source has parent take, duplicating...\n");
+			m_preg.src = src->Duplicate();
+		}
+		else
+		{
+			//ShowConsoleMsg("PCM_source has no parent take\n");
+			m_preg.src = src;
+		}
+		m_preg.loop = loop;
+		if (gain < 0.0)
+			gain = 0.0;
+		if (gain > 8.0)
+			gain = 8.0;
+		m_preg.volume = gain;
+	}
+	~PreviewEntry()
+	{
+#ifdef WIN32
+		DeleteCriticalSection(&m_preg.cs);
+#else
+        pthread_mutex_destroy(&m_preg.mutex);
+#endif
+		delete m_preg.src;
+	}
+	void lock_mutex()
+	{
+#ifdef WIN32
+		EnterCriticalSection(&m_preg.cs);
+#else
+        pthread_mutex_lock(&m_preg.mutex);
+#endif
+	}
+	void unlock_mutex()
+	{
+#ifdef WIN32
+		LeaveCriticalSection(&m_preg.cs);
+#else
+        pthread_mutex_unlock(&m_preg.mutex);
+#endif
+	}
+	preview_register_t m_preg;
+	int m_id = -1;
+};
+
+class PCMSourcePlayerManager;
+PCMSourcePlayerManager* g_sourcepreviewman = nullptr;
+
+class PCMSourcePlayerManager
+{
+public:
+	PCMSourcePlayerManager()
+	{
+		// the 1000 millisecond timer is used to check for non-looping previews that have ended
+		m_timer_id = SetTimer(NULL, 3000000, 1000, MyTimerproc);
+	}
+	~PCMSourcePlayerManager()
+	{
+		KillTimer(NULL, m_timer_id);
+	}
+	int startPreview(PCM_source* src, double gain, bool loop)
+	{
+		auto entry = std::make_unique<PreviewEntry>(m_preview_id_count, src, gain, loop);
+		if (entry->m_preg.src)
+		{
+			PlayPreview(&entry->m_preg);
+			m_previews.push_back(std::move(entry));
+			int old_id = m_preview_id_count;
+			++m_preview_id_count;
+			return old_id;
+		}
+		return -1;
+	}
+	void stopPreview(int preview_id)
+	{
+		if (preview_id >= 0)
+		{
+			for (int i = 0; i < m_previews.size(); ++i)
+			{
+				if (m_previews[i]->m_id == preview_id)
+				{
+					StopPreview(&m_previews[i]->m_preg);
+					m_previews.erase(m_previews.begin() + i);
+					break;
+				}
+			}
+		}
+		if (preview_id == -1)
+		{
+			for (int i = 0; i < m_previews.size(); ++i)
+			{
+				StopPreview(&m_previews[i]->m_preg);
+			}
+			m_previews.clear();
+		}
+	}
+	void stopPreviewsIfAtEnd()
+	{
+		for (int i = m_previews.size()-1; i>=0; --i)
+		{
+			m_previews[i]->lock_mutex(); 
+			double curpos = m_previews[i]->m_preg.curpos;
+			bool looping = m_previews[i]->m_preg.loop;
+			m_previews[i]->unlock_mutex();
+			if (looping) // the user is responsible for stopping looping previews!
+				continue;
+			if (curpos >= m_previews[i]->m_preg.src->GetLength()-0.01)
+			{
+				//char buf[100];
+				//sprintf(buf, "Stopping preview %d\n", m_previews[i]->m_id);
+				//ShowConsoleMsg(buf);
+				StopPreview(&m_previews[i]->m_preg);
+				m_previews.erase(m_previews.begin() + i);
+			}
+			
+		}
+	}
+private:
+	// for Windows 32 bit, this may need a calling convention qualifier...?
+	static void MyTimerproc(
+		HWND Arg1,
+		UINT Arg2,
+		UINT_PTR Arg3,
+		DWORD Arg4
+	)
+	{
+		if (g_sourcepreviewman)
+			g_sourcepreviewman->stopPreviewsIfAtEnd();
+	}
+	std::vector<std::unique_ptr<PreviewEntry>> m_previews;
+	int m_preview_id_count = 0;
+	UINT_PTR m_timer_id = 0;
+};
+
+
+
+int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop)
+{
+	if (g_sourcepreviewman == nullptr)
+		g_sourcepreviewman = new PCMSourcePlayerManager;
+	return (int)g_sourcepreviewman->startPreview(src, gain, loop);
+}
+
+int Xen_StopSourcePreview(int preview_id)
+{
+	if (g_sourcepreviewman != nullptr)
+		g_sourcepreviewman->stopPreview(preview_id);
+	return 0;
+}
+
+void Xen_DestroyPreviewSystem()
+{
+	delete g_sourcepreviewman;
+	g_sourcepreviewman = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////

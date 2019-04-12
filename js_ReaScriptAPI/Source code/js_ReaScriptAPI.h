@@ -197,3 +197,6 @@ AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samp
 void Xen_AudioWriter_Destroy(AudioWriter* aw);
 int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offset);
 int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffset, int numframes, int numchans, double samplerate, double positioninfile);
+int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop);
+int Xen_StopSourcePreview(int id);
+void Xen_DestroyPreviewSystem();

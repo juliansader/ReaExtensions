@@ -924,3 +924,23 @@ static void* __vararg_Xen_GetMediaSourceSamples(void** arglist, int numparms)
 		(int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], *(double*)arglist[5], *(double*)arglist[6]);
 	return (void*)(intptr_t)result;
 }
+
+static void* __vararg_Xen_StartSourcePreview(void** arglist, int numparms)
+{
+	int result = 0;
+	if (numparms > 2)
+	{
+		result = Xen_StartSourcePreview((PCM_source*)arglist[0], *(double*)arglist[1], (int)(INT_PTR)arglist[2]);
+	}
+	return (void*)(INT_PTR)result;
+}
+
+static void* __vararg_Xen_StopSourcePreview(void** arglist, int numparms)
+{
+	int result = 0;
+	if (numparms > 0)
+	{
+		result = Xen_StopSourcePreview((int)(INT_PTR)arglist[0]);
+	}
+	return (void*)(INT_PTR)result;
+}

@@ -271,7 +271,9 @@ APIdef aAPIdefs[] =
 	{ APIFUNC(Xen_AudioWriter_Create), "AudioWriter*", "const char*,int,int", "filename,numchans,samplerate", "Creates writer for 32 bit floating point WAV", },
 	{ APIFUNC(Xen_AudioWriter_Destroy), "void", "AudioWriter*", "writer", "Destroys writer", },
 	{ APIFUNC(Xen_AudioWriter_Write), "int", "AudioWriter*,int,void*,int", "writer,numframes,data,offset", "Write interleaved audio data to disk", },
-	{ APIFUNC(Xen_GetMediaSourceSamples), "int", "PCM_source*,void*,int,int,int,double,double", "src,destbuf,destbufoffset,numframes,numchans,samplerate,sourceposition", "Get interleaved audio data from media source", }
+	{ APIFUNC(Xen_GetMediaSourceSamples), "int", "PCM_source*,void*,int,int,int,double,double", "src,destbuf,destbufoffset,numframes,numchans,samplerate,sourceposition", "Get interleaved audio data from media source", },
+	{ APIFUNC(Xen_StartSourcePreview), "int", "PCM_source*,double,bool", "source,gain,loop", "Start audio preview of a PCM_source. Returns id of a preview handle that can be provided to Xen_StopSourcePreview.\nIf the given PCM_source does not belong to an existing MediaItem/Take, it will be deleted by the preview system when the preview is stopped."},
+	{ APIFUNC(Xen_StopSourcePreview), "int", "int", "preview_id", "Stop audio preview. id -1 stops all." }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
