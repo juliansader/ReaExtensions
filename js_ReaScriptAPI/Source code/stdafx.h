@@ -13,6 +13,7 @@
 #include <array>
 #include <utility>
 #include <cstdint>
+#include <memory>
 
 #define REAPERAPI_IMPLEMENT
 //#define REAPERAPI_MINIMAL // Only load the API functions #define'd by REAPERAPI_WANT_... This lowers the size of the dll by about 30kb, which isn't really worth the trouble.

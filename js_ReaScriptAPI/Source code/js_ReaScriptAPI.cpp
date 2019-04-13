@@ -77,7 +77,6 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 	// Does an extension need to do anything when unloading?  
 	// To prevent memory leaks, perhaps try to delete any stuff that may remain in memory?
 	// On Windows, LICE bitmaps are automatically destroyed when REAPER quits, but to make extra sure, this function will destroy them explicitly.
-
 	// Why store stuff in extra sets?  For some unexplained reason REAPER crashes if I try to destroy LICE bitmaps explicitly. And for another unexplained reason, this roundabout way works...
 	else 
 	{
@@ -87,20 +86,19 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		for (HWND hwnd : windowsToRestore)
 			JS_WindowMessage_RestoreOrigProc(hwnd);
 
-		for (auto& bm : Julian::LICEBitmaps)
-			LICE__Destroy(bm.first);
-		/*
+		//for (auto& bm : Julian::LICEBitmaps)
+		//	LICE__Destroy(bm.first);
+		
 		std::set<LICE_IBitmap*> bitmapsToDelete;
 		for (auto& i : Julian::LICEBitmaps)
 			bitmapsToDelete.insert(i.first);
 		for (LICE_IBitmap* bm : bitmapsToDelete)
 			JS_LICE_DestroyBitmap(bm);
-		*/
+		
 		for (auto& i : Julian::mapMallocToSize)
 			free(i.first);
 
 		plugin_register("-accelerator", &(Julian::sAccelerator));
-		Xen_DestroyPreviewSystem();
 		return 0;
 	}
 }
@@ -132,10 +130,17 @@ v0.980
 v0.981
  * Don't cache GDI HDCs.
  * JS_WindowMessage_Send and _Post can skip MAKEWPARAM and MAKELPARAM to send larger values.
+v0.982
+ * New audio preview functions by Xenakios.
+ * Improvements in Compositing functions, including:
+    ~ Bug fix: Return original window proc when all bitmaps are unlinked.
+	~ Source and dest RECTs of existing linked bitmap can be changed without first having to unlink.
+v0.984
+ * Hotfix for keyboard intercepts on macOS.
 */
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.981;
+	*versionOut = 0.984;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -187,7 +192,7 @@ int JS_VKeys_Callback(MSG* event, accelerator_register_t*)
 			break;
 	}
 
-	if ((VK_Intercepts[keycode] != 0) && (uMsg != WM_KEYUP) && (uMsg != WM_SYSKEYUP)) // Block keystroke, but not when releasing key
+	if ((keycode < 256) && (VK_Intercepts[keycode] != 0) && (uMsg != WM_KEYUP) && (uMsg != WM_SYSKEYUP)) // Block keystroke, but not when releasing key
 		return 1; // Eat keystroke
 	else
 		return 0; // "Not my window", whatever this means?
@@ -1672,37 +1677,100 @@ LRESULT CALLBACK JS_WindowMessage_Intercept_Callback(HWND hwnd, UINT uMsg, WPARA
 	// If not in map, we don't know how to call original process.
 	if (mapWindowData.count(hwnd) == 0)
 		return 1;
-	else {
-		sWindowData& windowData = mapWindowData[hwnd]; // Get reference/alias because want to write into existing struct.
 
-		// Event that should be intercepted? 
-		if (windowData.mapMessages.count(uMsg)) // ".contains" has only been implemented in more recent C++ versions
+	// INTERCEPT / BLOCK WINDOW MESSAGES
+	sWindowData& windowData = mapWindowData[hwnd]; // Get reference/alias because want to write into existing struct.
+
+	// Event that should be intercepted? 
+	if (windowData.mapMessages.count(uMsg)) // ".contains" has only been implemented in more recent C++ versions
+	{
+		windowData.mapMessages[uMsg].time = time_precise();
+		windowData.mapMessages[uMsg].wParam = wParam;
+		windowData.mapMessages[uMsg].lParam = lParam;
+
+		// If event will not be passed through, can quit here.
+		if (windowData.mapMessages[uMsg].passthrough == false)
 		{
-			windowData.mapMessages[uMsg].time = time_precise();
-			windowData.mapMessages[uMsg].wParam = wParam;
-			windowData.mapMessages[uMsg].lParam = lParam;
-
-			// If event will not be passed through, can quit here.
-			if (windowData.mapMessages[uMsg].passthrough == false)
+			// Most WM_ messages return 0 if processed, with only a few exceptions:
+			switch (uMsg)
 			{
-				// Most WM_ messages return 0 if processed, with only a few exceptions:
-				switch (uMsg)
-				{
-				case WM_SETCURSOR:
-				case WM_DRAWITEM:
-				case WM_COPYDATA:
-					return 1;
-				case WM_MOUSEACTIVATE:
-					return 3;
-				default:
-					return 0;
+			case WM_SETCURSOR:
+			case WM_DRAWITEM:
+			case WM_COPYDATA:
+			case WM_ERASEBKGND:
+				return 1;
+			case WM_MOUSEACTIVATE:
+				return 3;
+			default:
+				return 0;
+			}
+		}
+	}
+
+	// All messages that aren't blocked, end up here
+
+	// COMPOSITE LICE BITMAPS - if any
+	if (uMsg == WM_PAINT && !windowData.mapBitmaps.empty())
+	{
+		RECT r{ 0,0,0,0 };
+		GetClientRect(hwnd, &r);
+		InvalidateRect(hwnd, &r, false);  // If entire window isn't redrawn, and if compositing destination falls outside invalidated area, bitmap may be composited multiple times over itself.
+
+		LRESULT result = windowData.origProc(hwnd, uMsg, wParam, lParam);
+
+		HDC windowDC = GetDC(hwnd);
+		if (windowDC) {
+			for (auto& b : windowData.mapBitmaps) {
+				if (LICEBitmaps.count(b.first)) {
+					HDC& bitmapDC = LICEBitmaps[b.first];
+					if (bitmapDC) {
+						sBitmapData& i = b.second;
+						if (i.dstw != -1) {
+							r.left = i.dstx; r.right = i.dstw;
+						}
+						if (i.dsth != -1) {
+							r.top = i.dsty; r.bottom = i.dsth;
+						}
+#ifdef _WIN32
+						AlphaBlend(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
+#else
+						StretchBlt(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, SRCCOPY_USEALPHACHAN);
+#endif
+					}
+				}
+			}
+			ReleaseDC(hwnd, windowDC);
+		}
+		return result;
+	}
+
+	// NO COMPOSITING - just return original results
+	else
+		return windowData.origProc(hwnd, uMsg, wParam, lParam);
+}
+
+		//LRESULT result = windowData.origProc(hwnd, uMsg, wParam, lParam); // PRF_CLIENT | PRF_, );
+		/*
+		cW, cH = GetClientRect
+		RECT rr{ 10000, 10000, 0, 0 };
+		if (uMsg == WM_PAINT) {
+			if (!windowData.mapBitmaps.empty()) {
+				for (auto& b : windowData.mapBitmaps) {
+					sBitmapData& i = b.second;
+					if (i.dstx < rr.left) rr.left = i.dstx;
+					if (i.dsty < rr.top)  rr.top  = i.dsty;
+					if (i.dstx+i.dstw > rr.right) rr.right = i.dstx+i.dstw;
+					if (i.dsty+i.dsth > rr.bottom) rr.bottom = i.dsty+i.dsth;
+					InvalidateRect(hwnd, &rr, true);
 				}
 			}
 		}
 
-		// Any other event that isn't intercepted.
+		// All events that are not blocked
 		LRESULT r = windowData.origProc(hwnd, uMsg, wParam, lParam);
+		*/
 
+		/*
 		if (uMsg == WM_PAINT) {
 			if (!windowData.mapBitmaps.empty()) {
 				HDC windowDC = GetDC(hwnd);
@@ -1723,21 +1791,27 @@ LRESULT CALLBACK JS_WindowMessage_Intercept_Callback(HWND hwnd, UINT uMsg, WPARA
 									}
 								}
 #ifdef _WIN32
-								AlphaBlend(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
+								AlphaBlend(memDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
 #else
 								StretchBlt(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, SRCCOPY_USEALPHACHAN);
 #endif
 							}
 						}
 					}
-					ReleaseDC(hwnd, windowDC);
+					//ReleaseDC(hwnd, windowDC);
 				}
 			}
 		}
+		
+		//BitBlt(windowDC, 0, 0, r.right, r.bottom, memDC, 0, 0, SRCCOPY);
 
-		return r;
+		//SelectObject(memDC, oldbitmap);
+		DeleteObject(hbitmap);
+		DeleteDC(memDC);
+		
+		return result;
 	}
-}
+}*/
 
 
 // Intercept a single message type
@@ -2399,11 +2473,11 @@ int JS_Composite(HWND hwnd, int dstx, int dsty, int dstw, int dsth, LICE_IBitmap
 #endif
 		if (!origProc) return ERR_ORIGPROC;
 		
-		mapWindowData.emplace(hwnd, sWindowData{ origProc });
+		mapWindowData[hwnd] = sWindowData{ origProc };
 	}
 
-	// OK, hwnd should now be in map
-	mapWindowData[hwnd].mapBitmaps.emplace(sysBitmap, sBitmapData{ dstx, dsty, dstw, dsth, srcx, srcy, srcw, srch });
+	// OK, hwnd should now be in map. Don't use emplace, since may need to replace previous dst or src RECT of already-linked bitmap
+	mapWindowData[hwnd].mapBitmaps[sysBitmap] = sBitmapData{ dstx, dsty, dstw, dsth, srcx, srcy, srcw, srch };
 	return 1;
 }
 
@@ -2445,7 +2519,7 @@ void JS_Composite_Unlink(HWND hwnd, LICE_IBitmap* bitmap)
 	using namespace Julian;
 	if (mapWindowData.count(hwnd)) {
 		mapWindowData[hwnd].mapBitmaps.erase(bitmap);
-		if (mapWindowData[hwnd].mapBitmaps.empty() && mapWindowData[hwnd].mapMessages.empty() == 0) {
+		if (mapWindowData[hwnd].mapBitmaps.empty() && mapWindowData[hwnd].mapMessages.empty()) {
 			JS_WindowMessage_RestoreOrigProc(hwnd);
 		}
 	}
@@ -2469,7 +2543,7 @@ void* JS_LICE_CreateBitmap(bool isSysBitmap, int width, int height)
 	// Immediately get HDC and store, so that all scripts can use the same HDC.
 	if (bm) {
 		HDC dc = LICE__GetDC(bm);
-		Julian::LICEBitmaps.emplace(bm, dc);
+		Julian::LICEBitmaps[bm] = dc;
 	}
 	return bm;
 }
@@ -2977,8 +3051,8 @@ public:
 			}
 		}
 		/*
-		For mysterious reasons, WriteDoubles wants a split audio buffer (array of pointers into mono audio buffers), 
-		which is the reason the helper buffer and copying data into it is needed. Pretty much everything 
+		For mysterious reasons, WriteDoubles wants a split audio buffer (array of pointers into mono audio buffers),
+		which is the reason the helper buffer and copying data into it is needed. Pretty much everything
 		else in the Reaper API seems to be using interleaved buffers for audio...
 		*/
 		m_sink->WriteDoubles(m_writearraypointers, numframes, nch, 0, 1);
@@ -3023,7 +3097,7 @@ int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offs
 
 int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffset, int numframes, int numchans, double samplerate, double positioninfile)
 {
-	if (src == nullptr || destbuf==nullptr || numframes<1 || numchans < 1 || samplerate < 1.0)
+	if (src == nullptr || destbuf == nullptr || numframes<1 || numchans < 1 || samplerate < 1.0)
 		return 0;
 	int bufsize = getArraySize(destbuf);
 	if (bufsize == 0)
@@ -3051,10 +3125,10 @@ public:
 #ifdef WIN32
 		InitializeCriticalSection(&m_preg.cs);
 #else
-        pthread_mutexattr_t mta;
-        pthread_mutexattr_init(&mta);
-        pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
-        pthread_mutex_init(&m_preg.mutex, &mta);
+		pthread_mutexattr_t mta;
+		pthread_mutexattr_init(&mta);
+		pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
+		pthread_mutex_init(&m_preg.mutex, &mta);
 #endif
 		MediaItem_Take* parent_take = nullptr;
 		for (int i = 0; i < CountMediaItems(nullptr); ++i)
@@ -3095,7 +3169,7 @@ public:
 #ifdef WIN32
 		DeleteCriticalSection(&m_preg.cs);
 #else
-        pthread_mutex_destroy(&m_preg.mutex);
+		pthread_mutex_destroy(&m_preg.mutex);
 #endif
 		delete m_preg.src;
 	}
@@ -3104,7 +3178,7 @@ public:
 #ifdef WIN32
 		EnterCriticalSection(&m_preg.cs);
 #else
-        pthread_mutex_lock(&m_preg.mutex);
+		pthread_mutex_lock(&m_preg.mutex);
 #endif
 	}
 	void unlock_mutex()
@@ -3112,7 +3186,7 @@ public:
 #ifdef WIN32
 		LeaveCriticalSection(&m_preg.cs);
 #else
-        pthread_mutex_unlock(&m_preg.mutex);
+		pthread_mutex_unlock(&m_preg.mutex);
 #endif
 	}
 	preview_register_t m_preg;
@@ -3172,15 +3246,15 @@ public:
 	}
 	void stopPreviewsIfAtEnd()
 	{
-		for (int i = m_previews.size()-1; i>=0; --i)
+		for (int i = m_previews.size() - 1; i >= 0; --i)
 		{
-			m_previews[i]->lock_mutex(); 
+			m_previews[i]->lock_mutex();
 			double curpos = m_previews[i]->m_preg.curpos;
 			bool looping = m_previews[i]->m_preg.loop;
 			m_previews[i]->unlock_mutex();
 			if (looping) // the user is responsible for stopping looping previews!
 				continue;
-			if (curpos >= m_previews[i]->m_preg.src->GetLength()-0.01)
+			if (curpos >= m_previews[i]->m_preg.src->GetLength() - 0.01)
 			{
 				//char buf[100];
 				//sprintf(buf, "Stopping preview %d\n", m_previews[i]->m_id);
@@ -3188,12 +3262,12 @@ public:
 				StopPreview(&m_previews[i]->m_preg);
 				m_previews.erase(m_previews.begin() + i);
 			}
-			
+
 		}
 	}
 private:
 	// for Windows 32 bit, this may need a calling convention qualifier...?
-	static void MyTimerproc(
+	static void CALLBACK MyTimerproc(
 		HWND Arg1,
 		UINT Arg2,
 		UINT_PTR Arg3,
@@ -3231,4 +3305,3 @@ void Xen_DestroyPreviewSystem()
 }
 
 ////////////////////////////////////////////////////////////////
-
