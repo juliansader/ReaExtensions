@@ -4,6 +4,8 @@ namespace Julian
 {
 	using namespace std; 
 
+	double REAPER_VERSION = 0;
+
 	constexpr bool ENV32BIT = (sizeof(void*) == 4);
 	constexpr int TEMP_LEN  = 65;	// For temporary storage of pointer strings.
 	constexpr int API_LEN   = 1024;	// Maximum length of strings passed between Lua and API (when not using NeedXXX suffix).
