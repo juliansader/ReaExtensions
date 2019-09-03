@@ -1,6 +1,7 @@
 #pragma once
 
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t *rec);
+
 void  JS_ReaScriptAPI_Version(double* versionOut);
 
 void  JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz);
@@ -13,6 +14,7 @@ void  JS_Int(void* pointer, int offset, int* intOut);
 void  JS_Byte(void* pointer, int offset, int* byteOut);
 void  JS_Double(void* pointer, int offset, double* doubleOut);
 
+void* JS_Window_Create(const char* title, const char* className, int x, int y, int w, int h, char* styleOptional, void* ownerHWNDOptional);
 int   JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz);
 int   JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, char* folderOutNeedBIg, int folderOutNeedBig_sz);
 int   JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, bool allowMultiple, char* fileNamesOutNeedBig, int fileNamesOutNeedBig_sz);
@@ -36,6 +38,7 @@ HWND  JS_Window_FindChildByID(HWND parent, int ID);  // Functions that receive a
 
 HWND  JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title);
 void* JS_Window_Find(const char* title, bool exact);
+void* JS_Window_FindTop(const char* title, bool exact);
 void* JS_Window_FindChild(void* parentHWND, const char* title, bool exact);
 int   JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray);
 int   JS_Window_ArrayAllTop(double* reaperarray);
@@ -49,10 +52,14 @@ int   JS_MIDIEditor_ListAll(char* listOutNeedBig, int listOutNeedBig_sz);
 void  JS_Window_Move(void* windowHWND, int left, int top);
 void  JS_Window_Resize(void* windowHWND, int width, int height);
 void  JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height);
-void  JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWND);
+int   JS_GetLevel_ObjC(void* hwnd);
+int   JS_GetLevel(void* hwnd);
+bool  JS_Window_SetZOrder_ObjC(void* hwnd, void* insertAfterHWND);
+bool  JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWNDOptional);
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info);
 void  JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut);
-bool  JS_Window_SetOpacity_ObjC(void* windowHWND, double alpha);
+void  JS_Window_SetLong(void* windowHWND, const char* info, double value, double* retvalOut);
+bool  JS_Window_SetOpacity_ObjC(void* hwnd, double alpha);
 bool  JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value);
 
 void  JS_Window_SetFocus(void* windowHWND);
@@ -95,7 +102,7 @@ bool  JS_Window_OnCommand(void* windowHWND, int commandID);
 
 int   JS_Mouse_GetState(int flags);
 //int   JS_Mouse_GetHistory(int flags);
-//void  JS_Mouse_ClearHistory();
+void* JS_Mouse_GetCursor();
 bool  JS_Mouse_SetPosition(int x, int y);
 void* JS_Mouse_LoadCursor(int cursorNumber);
 void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName, bool* forceNewLoadOptional);
@@ -147,9 +154,13 @@ void  JS_LICE_DestroyBitmap(LICE_IBitmap* bitmap);
 void  JS_LICE_Blit(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height, double alpha, const char* mode);
 void  JS_LICE_RotatedBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double angle, double rotxcent, double rotycent, bool cliptosourcerect, double alpha, const char* mode);
 void  JS_LICE_ScaledBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double alpha, const char* mode);
+void  JS_LICE_Blur(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height);
+bool  JS_LICE_Blit_AlphaMultiply(LICE_IBitmap* destBitmap, int dstx, int dsty, LICE_IBitmap* sourceBitmap, int srcx, int srcy, int width, int height, double alpha);
 
 void* JS_LICE_LoadPNG(const char* filename);
-//bool  JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha);
+bool  JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha);
+//bool  LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha); // lice.h excludes these functions if LICE_PROVIDED_BY_APP, so must declare this function myself.
+//bool  JS_LICE_WriteJPG(const char *filename, LICE_IBitmap *bmp, int quality, bool force_baseline);
 bool  JS_LICE_IsFlipped(void* bitmap);
 bool  JS_LICE_Resize(void* bitmap, int width, int height);
 void  JS_LICE_Clear(void* bitmap, int color);
@@ -175,15 +186,26 @@ void  JS_LICE_Arc(void* bitmap, double cx, double cy, double r, double minAngle,
 void  JS_LICE_Circle(void* bitmap, double cx, double cy, double r, int color, double alpha, const char* mode, bool antialias);
 void  JS_LICE_RoundRect(void* bitmap, double x, double y, double w, double h, int cornerradius, int color, double alpha, const char* mode, bool antialias);
 
-int   JS_LICE_GetPixel(void* bitmap, int x, int y);
-void  JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const char* mode);
+void  JS_LICE_GetPixel(void* bitmap, int x, int y, double* colorOut);
+void  JS_LICE_PutPixel(void* bitmap, int x, int y, double color, double alpha, const char* mode);
 
-HWND  JS_Window_AttachTopmostPin(HWND windowHWND);
+// Functions from LICE that are not provided by app (also WritePNG above)
+//void  LICE_SetAlphaFromColorMask(LICE_IBitmap *dest, LICE_pixel color);
+void  JS_LICE_SetAlphaFromColorMask(LICE_IBitmap *dest, LICE_pixel color);
+//void  LICE_AlterBitmapHSV(LICE_IBitmap* src, float d_hue, float d_saturation, float d_value);  // hue is rolled over, saturation and value are clamped, all 0..1
+//void  LICE_AlterRectHSV(LICE_IBitmap* src, int x, int y, int w, int h, float d_hue, float d_saturation, float d_value);  // hue is rolled over, saturation and value are clamped, all 0..1
+void  JS_LICE_AlterBitmapHSV(LICE_IBitmap* src, float d_hue, float d_saturation, float d_value);  // hue is rolled over, saturation and value are clamped, all 0..1
+void  JS_LICE_AlterRectHSV(LICE_IBitmap* src, int x, int y, int w, int h, float d_hue, float d_saturation, float d_value);  // hue is rolled over, saturation and value are clamped, all 0..1
+bool  JS_LICE_ProcessRect(LICE_IBitmap* bitmap, int x, int y, int w, int h, const char* mode, double operand);
+
+// Undocumented functions
+void  JS_Window_AttachTopmostPin(void* windowHWND);
 void  JS_Window_AttachResizeGrip(void* windowHWND);
 
 int   JS_ListView_GetItemCount(HWND listviewHWND);
 int   JS_ListView_GetSelectedCount(HWND listviewHWND);
 int   JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz);
+void  JS_ListView_EnsureVisible(HWND listviewHWND, int index, bool partialOK);
 int   JS_ListView_EnumSelItems(HWND listviewHWND, int index);
 void  JS_ListView_GetItem(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz, int* stateOut);
 int   JS_ListView_GetItemState(HWND listviewHWND, int index);

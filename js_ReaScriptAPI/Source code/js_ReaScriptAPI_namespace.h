@@ -4,6 +4,7 @@ namespace Julian
 {
 	using namespace std; 
 
+	HINSTANCE ReaScriptAPI_Instance;
 	double REAPER_VERSION = 0;
 
 	constexpr bool ENV32BIT = (sizeof(void*) == 4);
@@ -29,7 +30,6 @@ namespace Julian
 	map<LICE_IBitmap*, HDC> LICEBitmaps;
 	set<HDC> GDIHDCs;
 
-
 	// To avoid having to re-load a cursor from file every time that a script is executed,
 	//		the HCURSURS will be stored in this map.
 	// WDL/swell doesn't provide a cross-platform function to remove cursors from memory,
@@ -37,11 +37,27 @@ namespace Julian
 	//		memory usage may climb. 
 	map<std::string, HCURSOR> mapFileToMouseCursor;
 
+
+	//////////////////////////////////////////////////////
+	// DIRECT MEMORY ACCESS
 	//Store the size of allocated memory for Mem functions
 	map<void*, int> mapMallocToSize;
 
+
+	///////////////////////////////////////////////////////////////
+	// KEYBOARD INTERCEPT
 	accelerator_register_t sAccelerator{ JS_VKeys_Callback, true };
 
+
+	/////////////////////////////////////////////
+	// WINDOW CLASS
+	// Remember to initialize the hInstance!
+	std::map<std::string, char*> mapClassNames;
+
+
+	/////////////////////////////////////////////
+	// GDI Objects
+	std::set<HGDIOBJ> setGDIObjects;
 
 	//////////////////////////////////////////////////////////////////////////////////////
 	// Find functions: Some global variables that will be used when searching for windows.

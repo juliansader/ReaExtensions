@@ -14,7 +14,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		{
 			// This is the WIN32 / swell MessageBox, not REAPER's API MB.  This should create a separate window that is listed in the taskbar,
 			//		and more easily visible behind REAPER's splash screen.
-			MessageBox(NULL, "Unable to import default API functions.\n\nNOTE:\nThis extension requires REAPER v5.965 or later.", "ERROR: js_ReaScriptAPI extension", 0);  //fprintf(stderr, "Unable to import API functions.\n");
+			MessageBox(NULL, "Unable to import default API functions.\n\nNOTE:\nThis extension requires REAPER v5.974 or higher.", "ERROR: js_ReaScriptAPI extension", 0);  //fprintf(stderr, "Unable to import API functions.\n");
 			return 0;
 		}
 		//		Load each of the undocumented functions.
@@ -39,10 +39,19 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			return 0;
 		}
 
+		Julian::REAPER_VERSION = atof(GetAppVersion());
+		if (Julian::REAPER_VERSION < 5.974)
+		{
+			MessageBox(NULL, "This extension requires REAPER v5.974 or higher.", "ERROR: js_ReaScriptAPI extension", 0);
+			return 0;
+		}
+
 		// Don't know what this does, but apparently it's necessary for the localization functions.
 		IMPORT_LOCALIZE_RPLUG(rec);
 
 		// Functions imported, continue initing plugin by exporting this extension's functions to ReaScript API.
+
+		Julian::ReaScriptAPI_Instance = hInstance;
 
 		// Each function's defstring will temporarily be contructed in temp[]
 		char temp[10000];
@@ -73,7 +82,14 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		// UNDOCUMENTED FEATURE! "<accelerator" instead of "accelerator" places function in front of keyboard processing queue
 		plugin_register("<accelerator", &(Julian::sAccelerator));
 
-		Julian::REAPER_VERSION = atof(GetAppVersion());
+		// On WindowsOS, register new class for Window_Create
+		/*
+#ifdef _WIN32
+		Julian::structWindowClass.hInstance = hInstance;
+		if (!RegisterClassEx(&(Julian::structWindowClass)))
+			MessageBox(NULL, "Window Class registration failed.\n\nThe extension will continue loading, but some script may not work properly.", "ERROR: js_ReaScriptAPI extension",	MB_ICONEXCLAMATION | MB_OK);
+#endif
+		*/
 
 		return 1; // success
 	}
@@ -100,6 +116,11 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 		
 		for (auto& i : Julian::mapMallocToSize)
 			free(i.first);
+		for (APIdef& i : ::aAPIdefs)
+			free(i.defstring);
+		for (HGDIOBJ i : Julian::setGDIObjects)
+			DeleteObject(i);
+
 
 		plugin_register("-accelerator", &(Julian::sAccelerator));
 		return 0;
@@ -144,11 +165,29 @@ v0.985
  * VKeys: Keyboard intercepts are first in queue, so work in MIDI editor too.
  * VKeys: Cutoff time, new functions for KeyUp and KeyDown
  * LICE: MeasureText
+ * BrowseForOpenFiles: On WindowsOS, prevent creating new file.
+v0.986
+ * New: JS_LICE_WritePNG.
+v0.987
+ * New: Various functions for manipulating LICE colors.
+v0.988
+ * New: JS_Mouse_GetCursor
+v0.989
+ * Window_Find does not search child windows.
+ * New: Window_FindAny for searching top-level as well as child windows.
+v0.990
+ * Fix: Window_SetOpacity works on macOS.
+ * Fix: Defstring memory leak, GDI Objects are automatically destroyed on exit.
+ * New: JS_Window_Create.
+ * New: JS_ListView_EnsureVisible.
+ * New: More options for Window_Show.
+ * New: JS_Window_SetZOrder options work on macOS.
 */
+
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.985;
+	*versionOut = 0.990;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -209,7 +248,7 @@ void JS_VKeys_GetState(double cutoffTime, char* stateOutNeedBig, int stateOutNee
 		if (stateOutNeedBig_sz == VK_Size) {
 			if (cutoffTime < 0)
 				cutoffTime = time_precise() + cutoffTime;
-			for (int i = 1; i <= VK_Size; i++)
+			for (unsigned int i = 1; i <= VK_Size; i++)
 			{
 				if (VK_KeyDown[i] > VK_KeyUp[i] && VK_KeyDown[i] > cutoffTime)
 					stateOutNeedBig[i-1] = 1;
@@ -226,7 +265,7 @@ void JS_VKeys_GetDown(double cutoffTime, char* stateOutNeedBig, int stateOutNeed
 		if (stateOutNeedBig_sz == VK_Size) {
 			if (cutoffTime < 0)
 				cutoffTime = time_precise() + cutoffTime;
-			for (int i = 1; i <= VK_Size; i++)
+			for (unsigned int i = 1; i <= VK_Size; i++)
 			{
 				if (VK_KeyDown[i] > cutoffTime)
 					stateOutNeedBig[i-1] = 1;
@@ -243,7 +282,7 @@ void JS_VKeys_GetUp(double cutoffTime, char* stateOutNeedBig, int stateOutNeedBi
 		if (stateOutNeedBig_sz == VK_Size) {
 			if (cutoffTime < 0)
 				cutoffTime = time_precise() + cutoffTime;
-			for (int i = 1; i <= VK_Size; i++)
+			for (unsigned int i = 1; i <= VK_Size; i++)
 			{
 				if (VK_KeyUp[i] > cutoffTime)
 					stateOutNeedBig[i-1] = 1;
@@ -359,7 +398,6 @@ void JS_Double(void* pointer, int offset, double* doubleOut)
 
 ///////////////////////////////////////////////////////////////////////////
 
-
 int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz)
 {			
 	// NeedBig buffers should be 2^15 chars by default
@@ -368,6 +406,8 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 	// Set default extension and filter.
 	const char* newExtList = ((strlen(extensionList) > 0) ? extensionList : "All files (*.*)\0*.*\0\0");
 
+	BOOL gotFile = FALSE;
+	
 #ifdef _WIN32
 	// These Windows file dialogs do not understand /, so v0.970 added this quick hack to replace with \.
 	size_t folderLen = strlen(initialFolder) + 1; // Include terminating \0.
@@ -405,11 +445,17 @@ int JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFold
 		NULL,					//DWORD         dwReserved;
 		0						//DWORD         FlagsEx;
 	};
-	BOOL gotFile = GetSaveFileName(&info);
+	gotFile = GetSaveFileName(&info);
 	free(newInitFolder);
 #else
-	// returns TRUE if file was chosen. 
-	BOOL gotFile = (BOOL)BrowseForSaveFile(windowTitle, initialFolder, initialFile, newExtList, fileNameOutNeedBig, fileNameOutNeedBig_sz);
+	// On macOS, this function easily crashes if the extList is empty or not properly formatted.
+	try {
+		// returns TRUE if file was chosen.
+		gotFile = (BOOL)BrowseForSaveFile(windowTitle, initialFolder, initialFile, newExtList, fileNameOutNeedBig, fileNameOutNeedBig_sz);
+	}
+	catch(...) {
+		return -3;
+	}
 #endif
 	if(!gotFile)
 		fileNameOutNeedBig[0] = '\0';
@@ -486,7 +532,13 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 	// free() the result of this, if non-NULL.
 	// if allowmul is set, the multiple files are specified the same way GetOpenFileName() returns.
 	char slash = '/';
-	fileNames = BrowseForFiles(windowTitle, initialFolder, initialFile, allowMultiple, newExtList);
+	try {
+		fileNames = BrowseForFiles(windowTitle, initialFolder, initialFile, allowMultiple, newExtList);
+	}
+	catch(...) {
+		return -3;
+	}
+			
 	retval = (fileNames ? -1 : 0);
 	{
 #endif
@@ -538,7 +590,7 @@ int JS_Dialog_BrowseForOpenFiles(const char* windowTitle, const char* initialFol
 // Browsing for folders is quite a mess in WIN32 (compared to swell).
 // Must use this weird callback function merely to set initial folder.
 #ifdef _WIN32
-INT CALLBACK BrowseForFolder_CallBack(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM pData)
+INT CALLBACK JS_Dialog_BrowseForFolder_CallBack(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM pData)
 {
 	if (uMsg == BFFM_INITIALIZED)
 	{
@@ -568,7 +620,7 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 		folderOutNeedBig,		//pszDisplayName;       // Return display name of item selected.
 		caption,				//LPCSTR       lpszTitle; // text to go in the banner over the tree.
 		BIF_NEWDIALOGSTYLE | BIF_BROWSEINCLUDEURLS | BIF_RETURNONLYFSDIRS , //UINT         ulFlags;                       // Flags that control the return stuff
-		BrowseForFolder_CallBack,		//BFFCALLBACK  lpfn;
+		JS_Dialog_BrowseForFolder_CallBack,		//BFFCALLBACK  lpfn;
 		(LPARAM)newInitFolder,	//LPARAM       lParam;	// extra info that's passed back in callbacks
 		0						//int          iImage;	// output var: where to return the Image index.
 	};
@@ -801,12 +853,14 @@ void* JS_Window_GetForeground()
 
 void  JS_Window_Enable(void* windowHWND, bool enable)
 {
-	EnableWindow((HWND)windowHWND, (BOOL)enable); // (enable ? (int)1 : (int)0));
+	if (ValidatePtr(windowHWND, "HWND"))
+		EnableWindow((HWND)windowHWND, (BOOL)enable); // (enable ? (int)1 : (int)0));
 }
 
 void  JS_Window_Destroy(void* windowHWND)
 {
-	DestroyWindow((HWND)windowHWND);
+	if (ValidatePtr(windowHWND, "HWND"))
+		DestroyWindow((HWND)windowHWND);
 }
 
 void  JS_Window_Show(void* windowHWND, const char* state)
@@ -825,12 +879,21 @@ void  JS_Window_Show(void* windowHWND, const char* state)
 	#define SW_SHOWDEFAULT SW_SHOWNORMAL
 	#define SW_RESTORE SW_SHOWNA
 	*/
-	int intState;
-	if		(strstr(state, "SHOWNA"))	intState = SW_SHOWNA;
-	else if (strstr(state, "MINI"))		intState = SW_SHOWMINIMIZED;
-	else if (strstr(state, "HIDE"))		intState = SW_HIDE;
-	else intState = SW_SHOW;
-	ShowWindow((HWND)windowHWND, intState);
+	if (ValidatePtr(windowHWND, "HWND"))
+	{
+		int intState;
+		if		(strstr(state, "SHOWNA"))	intState = SW_SHOWNA;
+		else if (strstr(state, "NOACT"))	intState = SW_SHOWNOACTIVATE;
+		else if (strstr(state, "MINI"))		intState = SW_SHOWMINIMIZED;
+		else if (strstr(state, "HIDE"))		intState = SW_HIDE;
+		else if (strstr(state, "MAX"))		intState = SW_SHOWMAXIMIZED;
+		else if (strstr(state, "REST"))		intState = SW_RESTORE;
+		else if (strstr(state, "DEF"))		intState = SW_SHOWDEFAULT;
+		else if (strstr(state, "NORM"))		intState = SW_NORMAL;
+		else if (strstr(state, "HIDE"))		intState = SW_HIDE;
+		else intState = SW_SHOW;
+		ShowWindow((HWND)windowHWND, intState);
+	}
 }
 
 bool JS_Window_IsVisible(void* windowHWND)
@@ -866,6 +929,8 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 	else if (strstr(info, "ID"))		intMode = GWL_ID;
 	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
 	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else if (strstr(info, "INSTANCE"))	intMode = GWLP_HINSTANCE;
+	else if (strstr(info, "PARENT"))	intMode = GWLP_HWNDPARENT;
 	else return nullptr;
 	
 	return (void*)GetWindowLongPtr((HWND)windowHWND, intMode);
@@ -890,9 +955,11 @@ void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
 #ifdef _WIN32
 	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
 	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
-	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "ID"))		intMode = GWLP_ID;
 	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
 	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else if (strstr(info, "INSTANCE"))	intMode = GWLP_HINSTANCE;
+	else if (strstr(info, "PARENT"))	intMode = GWLP_HWNDPARENT;
 	else {*retvalOut = 0; return;}
 
 	*retvalOut = (double)GetWindowLongPtr((HWND)windowHWND, intMode);
@@ -910,6 +977,34 @@ void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
 #endif
 }
 
+void JS_Window_SetLong(void* windowHWND, const char* info, double value, double* retvalOut)
+{
+	int intMode;
+
+#ifdef _WIN32
+	if (strstr(info, "USER"))			intMode = GWLP_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWLP_WNDPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else if (strstr(info, "INSTANCE"))	intMode = GWLP_HINSTANCE;
+	else if (strstr(info, "PARENT"))	intMode = GWLP_HWNDPARENT;
+	else { *retvalOut = 0; return; }
+
+	*retvalOut = (double)SetWindowLongPtr((HWND)windowHWND, intMode, (LONG_PTR)value);
+
+#else 
+	if (strstr(info, "USER"))			intMode = GWL_USERDATA;
+	else if (strstr(info, "WND"))		intMode = GWL_WNDPROC;
+	else if (strstr(info, "DLG"))		intMode = DWL_DLGPROC;
+	else if (strstr(info, "ID"))		intMode = GWL_ID;
+	else if (strstr(info, "EXSTYLE"))	intMode = GWL_EXSTYLE;
+	else if (strstr(info, "STYLE"))		intMode = GWL_STYLE;
+	else { *retvalOut = 0; return; }
+
+	*retvalOut = (double)SetWindowLong((HWND)windowHWND, intMode, (LONG_PTR)value);
+#endif
+}
 
 HWND JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title)
 {
@@ -988,6 +1083,52 @@ int ConvertSetHWNDToString(std::set<HWND>& foundHWNDs, char*& reaperBufNeedBig, 
 		}
 	}
 	return retval;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+BOOL CALLBACK JS_Window_FindTop_Callback_Top(HWND hwnd, LPARAM structPtr)
+{
+	using namespace Julian;
+	sEnumWindows& s = *(reinterpret_cast<sEnumWindows*>(structPtr));
+	s.temp[0] = '\0';
+	GetWindowText(hwnd, s.temp, s.tempLen); // WARNING: swell only returns a BOOL, not the title length
+	s.temp[s.tempLen - 1] = '\0'; // Make sure that loooong titles are properly terminated.
+	for (unsigned int i = 0; (s.temp[i] != '\0') && (i < s.tempLen); i++) s.temp[i] = (char)tolower(s.temp[i]); // FindWindow is case-insensitive, so this implementation is too
+	if (	 (s.exact  && (strcmp(s.temp, s.target) == 0))
+		|| (!(s.exact) && (strstr(s.temp, s.target) != NULL)))
+	{
+		s.foundHWNDs->insert(hwnd);
+		return FALSE;
+	}
+	else
+		return TRUE;
+}
+
+// Cockos SWELL doesn't provide FindWindow, and FindWindowEx doesn't provide the NULL, NULL top-level mode,
+//		so must code own implementation...
+// This implemetation optionally matches substrings.
+void* JS_Window_FindTop(const char* title, bool exact)
+{
+	using namespace Julian;
+
+	// FindWindow is case-insensitive, so this implementation is too. 
+	// Must first convert title to lowercase:
+	char titleLower[API_LEN];
+	int i = 0;
+	for (; (title[i] != '\0') && (i < API_LEN - 1); i++) titleLower[i] = (char)tolower(title[i]); // Convert to lowercase
+	titleLower[i] = '\0';
+
+	// To communicate with callback functions, use an sEnumWindows:
+	std::set<HWND> foundHWNDs;
+	char temp[API_LEN] = ""; // Will temprarily store titles as well as pointer string, so must be longer than TEMP_LEN.
+	sEnumWindows e{ titleLower, exact, temp, sizeof(temp), &foundHWNDs };
+	EnumWindows(JS_Window_FindTop_Callback_Top, reinterpret_cast<LPARAM>(&e));
+	if (foundHWNDs.size())
+		return *(foundHWNDs.begin());
+	else
+		return NULL;
 }
 
 
@@ -1318,14 +1459,12 @@ int JS_MIDIEditor_ArrayAll(double* reaperarray)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
+// Window_Create and other functions using SetWindowLong
 
 /*
 Some functions using SetWindowLongPtr...
-
 These flags are avilable in WDL/swell:
-
 BEWARE, THESE NUMBERS ARE DIFFERENT FROM WIN32!!!
-
 #define SWP_NOMOVE 1
 #define SWP_NOSIZE 2
 #define SWP_NOZORDER 4
@@ -1341,6 +1480,161 @@ BEWARE, THESE NUMBERS ARE DIFFERENT FROM WIN32!!!
 #ifndef SWP_NOOWNERZORDER
 #define SWP_NOOWNERZORDER 0 // In WIN32, this would be 0x200, but in swell, use 0 so that no change when OR'ing.
 #endif
+
+// swell uses CreateDialog instead of CreateWindow to create new windows, and the callback returns INT_PTR instead of LRESULT
+#ifdef _WIN32
+typedef LRESULT callbacktype;
+#else
+typedef INT_PTR callbacktype;
+#endif
+
+callbacktype CALLBACK JS_Window_Create_WinProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+		//case WM_PAINT:
+		//    return FALSE;
+	case WM_CLOSE:
+	case WM_DESTROY:
+		DestroyWindow(hwnd);
+		return FALSE;
+		//case WM_DESTROY:
+		//	PostQuitMessage(0);
+		//	return FALSE;
+	default:
+		return (callbacktype)DefWindowProc(hwnd, msg, wParam, lParam);
+	}
+}
+
+#ifndef _WIN32
+#define WS_SIZEBOX WS_THICKFRAME
+#define WS_OVERLAPPEDWINDOW (WS_SIZEBOX|WS_SYSMENU|WS_CAPTION)
+#define WS_OVERLAPPED WS_CAPTION
+#define WS_MAXIMIZEBOX (WS_CAPTION|WS_SIZEBOX)
+#define WS_MINIMIZEBOX WS_CAPTION
+#define WS_BORDER WS_CAPTION
+#define WS_DLGFRAME WS_CAPTION
+#define WS_CLIPCHILDREN 0
+#define WS_POPUP 0
+#endif
+
+void JS_ConvertStringToStyle(char* styleString, DWORD* style, int* show)
+{
+	*show = SW_SHOW; // Default values if styleOptional not specified.
+	*style = WS_OVERLAPPEDWINDOW;
+
+	if (styleString && *styleString) {
+		*style = 0;
+		// To distinguish MAXIMIZEBOX from MAXIMIZE, alter the M of all MAXIMIZEBOX's.
+		// swell doesn't implement WS_SHOWMAXIMIZED and WS_SHOWMINIMIZED, so will use ShowWindow's options instead.
+		char* box;
+		while (box = strstr(styleString, "MAXIMIZEBOX")) { *style |= (WS_MAXIMIZEBOX | WS_SYSMENU); *box = 'N'; }
+		if (strstr(styleString, "MAXIMIZE"))		*show = SW_SHOWMAXIMIZED;
+		while (box = strstr(styleString, "MINIMIZEBOX")) { *style |= (WS_MINIMIZEBOX | WS_SYSMENU); *box = 'N'; }
+		if (strstr(styleString, "MINIMIZE") || strstr(styleString, "ICONIC")) *show = SW_SHOWMINIMIZED;
+
+		if (strstr(styleString, "CHILD"))			*style |= WS_CHILD;
+		//if (strstr(styleString, "CHILDWINDOW"))	*style |= WS_CHILDWINDOW;
+		if (strstr(styleString, "CLIPSIBLINGS"))	*style |= WS_CLIPSIBLINGS;
+		if (strstr(styleString, "DISABLED"))		*style |= WS_DISABLED;
+		if (strstr(styleString, "VISIBLE"))			*style |= WS_VISIBLE;
+		if (strstr(styleString, "CAPTION"))			*style |= WS_CAPTION;
+		if (strstr(styleString, "VSCROLL"))			*style |= WS_VSCROLL;
+		if (strstr(styleString, "HSCROLL"))			*style |= WS_HSCROLL;
+		if (strstr(styleString, "SYSMENU"))			*style |= WS_SYSMENU;
+		if (strstr(styleString, "THICKFRAME")  || strstr(styleString, "SIZEBOX"))			*style |= WS_SIZEBOX;
+		if (strstr(styleString, "GROUP"))			*style |= WS_GROUP;
+		if (strstr(styleString, "TABSTOP"))			*style |= WS_TABSTOP;
+		if (strstr(styleString, "OVERLAPPED")  || strstr(styleString, "TILED"))				*style |= WS_OVERLAPPED;
+		if (strstr(styleString, "TILEDWINDOW") || strstr(styleString, "OVERLAPPEDWINDOW"))	*style |= WS_OVERLAPPEDWINDOW;
+		if (strstr(styleString, "DLGFRAME"))		*style |= WS_DLGFRAME;
+		if (strstr(styleString, "BORDER"))			*style |= WS_BORDER;
+		if (strstr(styleString, "CLIPCHILDREN"))	*style |= WS_CLIPCHILDREN;
+		if (strstr(styleString, "POPUP"))			{ *style &= (~(WS_CAPTION | WS_CHILD)); *style |= WS_POPUP; } // swell doesn't actually implement WS_POPUP as separate *style
+	}
+}
+
+void* JS_Window_Create(const char* title, const char* className, int x, int y, int w, int h, char* styleOptional, void* ownerHWNDOptional)
+{
+	using namespace Julian;
+	HWND hwnd = nullptr; // Default return value if everything doesn't go OK.
+	
+	if ((ownerHWNDOptional==nullptr) || ValidatePtr((HWND)ownerHWNDOptional, "HWND")) // NULL owner is allowed, but not an invalid one
+	{
+		int show;
+		DWORD style;
+		JS_ConvertStringToStyle(styleOptional, &style, &show);
+
+		// On Windows, each new class name requires a new class.
+	#ifdef _WIN32
+		// Does the class already exist?
+		std::string classString = className;
+		if (!mapClassNames.count(classString))
+		{
+			WNDCLASSEX structWindowClass
+			{
+				sizeof(WNDCLASSEX),		//UINT cbSize;
+				CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, //UINT style;
+				JS_Window_Create_WinProc, //WNDPROC     lpfnWndProc;
+				0,			//int         cbClsExtra;
+				0,			//int         cbWndExtra;
+				ReaScriptAPI_Instance,		//HINSTANCE   hInstance;
+				NULL,		//HICON       hIcon;
+				NULL,		//HCURSOR     hCursor;
+				NULL,		//HBRUSH      hbrBackground;
+				NULL,		//LPCSTR      lpszMenuName;
+				className,	//LPCSTR      lpszClassName;
+				NULL,		//HICON       hIconSm;
+			};
+
+			if (RegisterClassEx(&structWindowClass))
+				mapClassNames[classString] = strdup(className);
+		}
+
+		if (mapClassNames.count(classString))
+		{
+			hwnd = CreateWindowEx(
+				WS_EX_LEFT | WS_EX_ACCEPTFILES | WS_EX_APPWINDOW | WS_EX_CONTEXTHELP,	//DWORD     dwExStyle,
+				mapClassNames[classString], 	//LPCSTR    lpClassName,
+				title, 	//LPCSTR    lpWindowName,
+				style, //WS_POPUP, //WS_OVERLAPPEDWINDOW, //WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_VISIBLE | WS_MINIMIZEBOX,	//DWORD     dwStyle,
+				x, 		//int       X,
+				y, 		//int       Y,
+				w, 		//int       nWidth,
+				h, 		//int       nHeight,
+				(HWND)ownerHWNDOptional,	//HWND      hWndParent,
+				NULL,	//HMENU     hMenu,
+				ReaScriptAPI_Instance,//HINSTANCE hInstance,
+				NULL	//LPVOID    lpParam
+			);
+			if (hwnd)
+			{
+				ShowWindow(hwnd, show);
+				UpdateWindow(hwnd);
+			}
+		}
+
+	#else
+		hwnd = CreateDialog(nullptr, MAKEINTRESOURCE(0), nullptr, JS_Window_Create_WinProc);
+		if (hwnd) {
+			// Does the class already exist?
+			std::string classString = className;
+			if (!mapClassNames.count(classString))
+				mapClassNames[classString] = strdup(className);
+			SWELL_SetClassName(hwnd, mapClassNames[classString]);
+			SetWindowLong(hwnd, GWL_STYLE, style);
+			SetWindowText(hwnd, title);
+			SetWindowPos(hwnd, HWND_TOP, x, y, w, h, SWP_SHOWWINDOW | SWP_NOCOPYBITS | SWP_FRAMECHANGED);
+			#ifdef __APPLE__
+			JS_Window_SetZOrder_ObjC(hwnd, HWND_TOP); // swell's SetWindowPos doesn't work well for Z-ordering
+			#endif
+			ShowWindow(hwnd, show);
+			//UpdateWindow(hwnd);
+		}
+	#endif
+	}
+	return hwnd;
+}
 
 // This function moves windows without resizing or requiring any info about window size.
 void JS_Window_Move(void* windowHWND, int left, int top)
@@ -1359,17 +1653,48 @@ void JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int h
 	SetWindowPos((HWND)windowHWND, NULL, left, top, width, height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER );
 }
 
-void JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWND)
+// Gets the NSWindowLevel on macOS
+int JS_GetLevel(void* hwnd)
 {
-	HWND insertAfter;
-	// Search for single chars that can distinguish the different ZOrder strings.
-	if      (strstr(ZOrder, "IN"))		insertAfter = (HWND)insertAfterHWND; // insertAfter
-	else if (strstr(ZOrder, "BO"))		insertAfter = HWND_BOTTOM;
-	else if (strstr(ZOrder, "NOT"))		insertAfter = HWND_NOTOPMOST;
-	else if (strstr(ZOrder, "TOPM"))	insertAfter = HWND_TOPMOST;
-	else								insertAfter = HWND_TOP; // Top
+	#ifdef __APPLE__
+	return JS_GetLevel_ObjC(hwnd);
+	#else
+	return 0;
+	#endif
+}
+	
+// swell's Z ordering doesn't work well, and doesn't even interpret TOPMOST and NOTOPMOST.
+// So I tried to code my own Z ordering
+bool JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWNDOptional)
+{
+	constexpr intptr_t CHECK_NO_FLAG = -3; // Some value that should not be one of the existing flags.
+	if (ValidatePtr(windowHWND, "HWND")) 
+	{
+		HWND insertAfter = (HWND)CHECK_NO_FLAG;
+		if (strstr(ZOrder, "BO"))		insertAfter = HWND_BOTTOM;
+		else if (strstr(ZOrder, "NOT"))		insertAfter = HWND_NOTOPMOST;
+		else if (strstr(ZOrder, "TOPM"))	insertAfter = HWND_TOPMOST;
+		else if (strstr(ZOrder, "TOP"))		insertAfter = HWND_TOP; // Top
+		#ifndef __linux__ // swell doesn't provide all options
+		else if (strstr(ZOrder, "IN")) 
+		{
+			if (insertAfterHWNDOptional && ValidatePtr(insertAfterHWNDOptional, "HWND"))
+				insertAfter = (HWND)insertAfterHWNDOptional;
+		}
+		#endif
 
-	SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+		if (insertAfter != (HWND)CHECK_NO_FLAG) { // Was given a proper new value?
+		#ifdef _WIN32
+			return !!SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+		#elif __linux__
+			SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+			return true;
+		#else
+			return JS_Window_SetZOrder_ObjC(windowHWND, insertAfter);
+		#endif
+		}
+	}
+	return false;
 }
 
 void JS_Window_Update(HWND windowHWND)
@@ -1386,12 +1711,11 @@ bool JS_Window_InvalidateRect(HWND windowHWND, int left, int top, int right, int
 bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 {
 	// Opacity can only be applied to top-level framed windows, AFAIK, and in Linux, REAPER crashes if opacity is applied to a child window.
-	// So must check that style is WS_THICKFRAME.
 	bool OK = false;
-	if (JS_Window_IsWindow(windowHWND))
+	if (ValidatePtr(windowHWND, "HWND"))
 	{
 #ifdef _WIN32
-		if (GetWindowLongPtr(windowHWND, GWL_STYLE) & WS_THICKFRAME)
+		windowHWND = GetAncestor(windowHWND, GA_ROOT);
 		{
 			if (SetWindowLongPtr(windowHWND, GWL_EXSTYLE, GetWindowLongPtr(windowHWND, GWL_EXSTYLE) | WS_EX_LAYERED))
 			{
@@ -1402,26 +1726,32 @@ bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 					UINT v = (UINT)value;
 					OK = !!(SetLayeredWindowAttributes(windowHWND, (COLORREF)(((v & 0xFF0000) >> 16) | (v & 0x00FF00) | ((v & 0x0000FF) << 16)), 0, LWA_COLORKEY));
 				}
+			}
+		}
 #elif __linux__
-		if (GetWindowLong(windowHWND, GWL_STYLE) & WS_THICKFRAME)
+		GetNextAncestorWindow:
 		{
-			if (strchr(mode, 'A') || (!IsWindow(windowHWND)))
+			// Definitions of swell's HWND, m_oswindow etc can be found in swell-internal.h
+			if (windowHWND->m_oswindow) // Does this HWND correspond to a GDKWindow?
 			{
-				GdkWindow* w = (GdkWindow*)windowHWND->m_oswindow;
+				GdkWindow* w = gdk_window_get_effective_toplevel((GdkWindow*)windowHWND->m_oswindow);
 				if (w)
 				{
 					gdk_window_set_opacity(w, value);
 					OK = true;
 				}
-#elif __APPLE__
-		if (GetWindowLong(windowHWND, GWL_STYLE) & WS_THICKFRAME)
-		{
-			if (strchr(mode, 'A'))
-			{
-				OK = JS_Window_SetOpacity_ObjC(windowHWND, value);
-#endif
 			}
+			else if (windowHWND->m_parent) // Else, try to go high in hierarchy, until oswindow is found
+			{
+				windowHWND = windowHWND->m_parent;
+				goto GetNextAncestorWindow;
+			}
+			//else // Oops, nowhere to go, just return
+			//	break;
 		}
+#elif __APPLE__
+		OK = JS_Window_SetOpacity_ObjC(windowHWND, value);
+#endif
 	}
 	return OK;
 }
@@ -2218,6 +2548,14 @@ void JS_Mouse_SetCursor(void* cursorHandle)
 	SetCursor((HCURSOR)cursorHandle);
 }
 
+void* JS_Mouse_GetCursor()
+{
+#ifdef _WIN32
+	return (void*)GetCursor();
+#else
+	return (void*)SWELL_GetLastSetCursor();
+#endif
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2256,10 +2594,13 @@ void* JS_GDI_CreateFillBrush(int color)
 {
 #ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
-	return CreateSolidBrush(color);
+	HGDIOBJ object = CreateSolidBrush(color);
 #else
-	return CreateSolidBrushAlpha(color, 1);
+	HGDIOBJ object = CreateSolidBrushAlpha(color, 1);
 #endif
+	if (object)
+		Julian::setGDIObjects.insert(object);
+	return object;
 }
 
 void* JS_GDI_CreatePen(int width, int color)
@@ -2267,7 +2608,10 @@ void* JS_GDI_CreatePen(int width, int color)
 #ifdef _WIN32
 	color = ((color & 0x0000FF) << 16) | (color & 0x00FF00) | ((color & 0xFF0000) >> 16);
 #endif
-	return CreatePen(PS_SOLID, width, color);
+	HGDIOBJ object = CreatePen(PS_SOLID, width, color);
+	if (object)
+		Julian::setGDIObjects.insert(object);
+	return object;
 }
 
 #ifndef FF_DONTCARE
@@ -2275,17 +2619,27 @@ void* JS_GDI_CreatePen(int width, int color)
 #endif
 void* JS_GDI_CreateFont(int height, int weight, int angle, bool italic, bool underline, bool strikeOut, const char* fontName)
 {
-	return CreateFont(height, 0, angle, 0, weight, (BOOL)italic, (BOOL)underline, (BOOL)strikeOut, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, fontName);
+	HGDIOBJ object = CreateFont(height, 0, angle, 0, weight, (BOOL)italic, (BOOL)underline, (BOOL)strikeOut, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, fontName);
+	if (object)
+		Julian::setGDIObjects.insert(object);
+	return object;
 }
 
 void* JS_GDI_SelectObject(void* deviceHDC, void* GDIObject)
 {
-	return SelectObject((HDC)deviceHDC, (HGDIOBJ)GDIObject);
+	if (Julian::setGDIObjects.count((HGDIOBJ)GDIObject))
+		return SelectObject((HDC)deviceHDC, (HGDIOBJ)GDIObject);
+	else
+		return nullptr;
 }
 
 void JS_GDI_DeleteObject(void* GDIObject)
 {
-	DeleteObject((HGDIOBJ)GDIObject);
+	if (Julian::setGDIObjects.count((HGDIOBJ)GDIObject))
+	{
+		DeleteObject((HGDIOBJ)GDIObject);
+		Julian::setGDIObjects.erase((HGDIOBJ)GDIObject);
+	}
 }
 
 
@@ -2416,7 +2770,7 @@ void JS_GDI_SetPixel(void* deviceHDC, int x, int y, int color)
 
 void JS_GDI_Blit(void* destHDC, int dstx, int dsty, void* sourceHDC, int srcx, int srcy, int width, int height, const char* modeOptional)
 {
-	if (strchr(modeOptional, 'A') || strchr(modeOptional, 'a'))
+	if (modeOptional && (strchr(modeOptional, 'A') || strchr(modeOptional, 'a')))
 #ifdef _WIN32
 		AlphaBlend((HDC)destHDC, dstx, dsty, width, height, (HDC)sourceHDC, srcx, srcy, width, height, BLENDFUNCTION { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
 #else
@@ -2428,7 +2782,7 @@ void JS_GDI_Blit(void* destHDC, int dstx, int dsty, void* sourceHDC, int srcx, i
 
 void JS_GDI_StretchBlit(void* destHDC, int dstx, int dsty, int dstw, int dsth, void* sourceHDC, int srcx, int srcy, int srcw, int srch, const char* modeOptional)
 {
-	if (strchr(modeOptional, 'A') || strchr(modeOptional, 'a'))
+	if (modeOptional && (strchr(modeOptional, 'A') || strchr(modeOptional, 'a')))
 #ifdef _WIN32
 		AlphaBlend((HDC)destHDC, dstx, dsty, dstw, dsth, (HDC)sourceHDC, srcx, srcy, srcw, srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
 #else
@@ -2614,7 +2968,7 @@ void JS_LICE_DestroyBitmap(LICE_IBitmap* bitmap)
 }
 
 
-#define LICE_BLIT_MODE_MASK 0xff
+#define LICE_BLIT_MODE_MASK 0xff // Similar to CHANCOPY_ATOA
 #define LICE_BLIT_MODE_COPY 0
 #define LICE_BLIT_MODE_ADD 1
 #define LICE_BLIT_MODE_DODGE 2
@@ -2637,9 +2991,26 @@ void JS_LICE_DestroyBitmap(LICE_IBitmap* bitmap)
 
 void JS_LICE_Blit(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height, double alpha, const char* mode)
 {	
-	GETINTMODE
 	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
-		LICE_Blit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height, (float)alpha, intMode);
+	{
+		if (strstr(mode, "BLUR"))
+			LICE_Blur((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height);
+		else if (strstr(mode, "ALPHAMUL"))
+			JS_LICE_Blit_AlphaMultiply((LICE_IBitmap*)destBitmap, dstx, dsty, (LICE_IBitmap*)sourceBitmap, srcx, srcy, width, height, alpha);
+		else {
+			GETINTMODE
+			if (strstr(mode, "CHANCOPY")) { // This mode is only available for LICE_Blit()
+				intMode = LICE_BLIT_MODE_CHANCOPY;
+				if (strstr(mode, "_G")) intMode |= 1;
+				else if (strstr(mode, "_R")) intMode |= 2;
+				else if (strstr(mode, "_A")) intMode |= 3;
+				if (strstr(mode, "TOG")) intMode |= 1 << 2;
+				else if (strstr(mode, "TOR")) intMode |= 2 << 2;
+				else if (strstr(mode, "TOA")) intMode |= 3 << 2;
+			}
+			LICE_Blit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height, (float)alpha, intMode);
+		}
+	}
 }
 
 void JS_LICE_RotatedBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double angle, double rotxcent, double rotycent, bool cliptosourcerect, double alpha, const char* mode)
@@ -2654,6 +3025,12 @@ void JS_LICE_ScaledBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth
 	GETINTMODE
 	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
 		LICE_ScaledBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)alpha, intMode);
+}
+
+void JS_LICE_Blur(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height)
+{
+	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+		LICE_Blur((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height);
 }
 
 void* JS_LICE_LoadPNG(const char* filename)
@@ -2672,10 +3049,10 @@ void* JS_LICE_LoadPNG(const char* filename)
 	return png;
 }
 
-/*bool JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha)
+bool JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha)
 {
 	return LICE_WritePNG(filename, bitmap, wantAlpha);
-}*/
+}
 
 void JS_LICE_Circle(void* bitmap, double cx, double cy, double r, int color, double alpha, const char* mode, bool antialias)
 {
@@ -2713,6 +3090,82 @@ void JS_LICE_Clear(void* bitmap, int color)
 		LICE_Clear((LICE_IBitmap*)bitmap, (LICE_pixel)color);
 }
 
+bool JS_LICE_Blit_AlphaMultiply(LICE_IBitmap* destBitmap, int dstx, int dsty, LICE_IBitmap* sourceBitmap, int srcx, int srcy, int width, int height, double alpha)
+{
+	//if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+	int srcr = srcx + width;
+	int srcb = srcy + height;
+
+	// clip to input
+	if (srcx < 0) { dstx -= srcx; srcx = 0; }
+	if (srcy < 0) { dsty -= srcy; srcy = 0; }
+	if (srcr > sourceBitmap->getWidth()) srcr = sourceBitmap->getWidth();
+	if (srcb > sourceBitmap->getHeight()) srcb = sourceBitmap->getHeight();
+
+	// clip to output
+	if (dstx < 0) { srcx -= dstx; dstx = 0; }
+	if (dsty < 0) { srcy -= dsty; dsty = 0; }
+
+	const int destbm_w = destBitmap->getWidth(), destbm_h = destBitmap->getHeight();
+	if (srcr <= srcx || srcb <= srcy || dstx >= destbm_w || dsty >= destbm_h) return true;
+
+	if (srcr > srcx + (destbm_w - dstx)) srcr = srcx + (destbm_w - dstx);
+	if (srcb > srcy + (destbm_h - dsty)) srcb = srcy + (destbm_h - dsty);
+
+	// ignore blits that are 0
+	if (srcr <= srcx || srcb <= srcy) return true;
+
+	int dest_span = destBitmap->getRowSpan(); // *sizeof(LICE_pixel);
+	int src_span = sourceBitmap->getRowSpan(); // *sizeof(LICE_pixel);
+	const LICE_pixel *psrc = (LICE_pixel *)sourceBitmap->getBits();
+	LICE_pixel *pdest = (LICE_pixel *)destBitmap->getBits();
+	if (!psrc || !pdest) return false;
+
+	if (sourceBitmap->isFlipped())
+	{
+		psrc += (sourceBitmap->getHeight() - srcy - 1)*src_span;
+		src_span = -src_span;
+	}
+	else psrc += srcy*src_span;
+	psrc += srcx * sizeof(LICE_pixel);
+
+	if (destBitmap->isFlipped())
+	{
+		pdest += (destbm_h - dsty - 1)*dest_span;
+		dest_span = -dest_span;
+	}
+	else pdest += dsty*dest_span;
+	pdest += dstx * sizeof(LICE_pixel);
+
+	height = srcb - srcy;
+	width = srcr - srcx;
+
+	LICE_pixel *o, a, a2;
+	const LICE_pixel* in;
+	while (height--)
+	{
+		o = pdest;
+		in = psrc;
+		int cnt = width;
+		while (cnt--)
+		{
+			a = (LICE_pixel)((*in) * alpha) & 0xFF000000;
+			if (!a)
+				*o = 0;
+			else if (a == 0xFF000000)
+				*o = *in;
+			else {
+				a2 = a >> 24;
+				*o = a | (((((*in) & 0x00FF0000) * a2) >> 8) & 0x00FF0000) | (((((*in) & 0x0000FF00) * a2) >> 8) & 0x0000FF00) | ((((*in) & 0x000000FF) * a2) >> 8);
+			}
+			o++;
+			in++;
+		}
+		pdest += dest_span;
+		psrc += src_span;
+	}
+	return true;
+}
 
 
 void* JS_LICE_CreateFont()
@@ -2840,55 +3293,199 @@ void JS_LICE_Bezier(void* bitmap, double xstart, double ystart, double xctl1, do
 		LICE_DrawCBezier((LICE_IBitmap*)bitmap, xstart, ystart, xctl1, yctl1, xctl2, yctl2, xend, yend, (LICE_pixel)color, (float)alpha, intMode, antialias, tol);
 }
 
-int JS_LICE_GetPixel(void* bitmap, int x, int y)
+void JS_LICE_GetPixel(void* bitmap, int x, int y, double* colorOut)
 {
 	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
-		return (int)LICE_GetPixel((LICE_IBitmap*)bitmap, x, y);
+		*colorOut = (double)(LICE_GetPixel((LICE_IBitmap*)bitmap, x, y));
 	else
-		return 0;
+		*colorOut = -1;
 }
 
-void JS_LICE_PutPixel(void* bitmap, int x, int y, int color, double alpha, const char* mode)
+void JS_LICE_PutPixel(void* bitmap, int x, int y, double color, double alpha, const char* mode)
 {
 	GETINTMODE
 	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_PutPixel((LICE_IBitmap*)bitmap, x, y, (LICE_pixel)color, (float)alpha, intMode);
 }
 
+void JS_LICE_SetAlphaFromColorMask(LICE_IBitmap* bitmap, LICE_pixel color)
+{
+	color &= 0xFFFFFF;
+	LICE_SetAlphaFromColorMask(bitmap, color);
+	/*if (!bitmap) return;
+	LICE_pixel *p = bitmap->getBits();
+	int h = bitmap->getHeight();
+	int w = bitmap->getWidth();
+	int sp = bitmap->getRowSpan();
+	if (!p || w<1 || h<1 || sp<1) return;
+
+	while (h-->0)
+	{
+		int n = w;
+		while (n--)
+		{
+			if ((*p&LICE_RGBA(255, 255, 255, 0)) == color) *p &= LICE_RGBA(255, 255, 255, 0);
+			else *p |= LICE_RGBA(0, 0, 0, 255);
+			p++;
+		}
+		p += sp - w;
+	}*/
+}
+
+void  JS_LICE_AlterBitmapHSV(LICE_IBitmap* bitmap, float hue, float saturation, float value)  // hue is rolled over, saturation and value are clamped, all 0..1
+{
+	LICE_AlterBitmapHSV(bitmap, hue, saturation, value);
+}
+
+void  JS_LICE_AlterRectHSV(LICE_IBitmap* bitmap, int x, int y, int w, int h, float hue, float saturation, float value)  // hue is rolled over, saturation and value are clamped, all 0..1
+{
+	LICE_AlterRectHSV(bitmap, x, y, w, h, hue, saturation, value);
+}
+
+bool JS_LICE_ProcessRect(LICE_IBitmap* bitmap, int x, int y, int w, int h, const char* mode, double operand)
+{
+	// In order to avoid the overhead of a separate function call for each pixel, 
+	//		this code is copied from Cockos's lice.h.
+	if (!Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap)) return false;
+
+	if (x<0) { w += x; x = 0; }
+	if (y<0) { h += y; y = 0; }
+
+	LICE_pixel *p = bitmap->getBits();
+	const int sp = bitmap->getRowSpan();
+	const int destbm_w = bitmap->getWidth(), destbm_h = bitmap->getHeight();
+	if (!p || !sp || w<1 || h < 1 || x >= destbm_w || y >= destbm_h) return false;
+
+	if (w > destbm_w - x) w = destbm_w - x;
+	if (h > destbm_h - y) h = destbm_h - y;
+
+	if (bitmap->isFlipped()) p += (destbm_h - y - h)*sp;
+	else p += sp*y;
+
+	p += x;
+
+	if (strstr(mode, "XOR")) {
+		LICE_pixel q = (uint32_t)operand;
+		LICE_pixel* pout;
+		while (h--)	{
+			pout = p;
+			int n = w;
+			while (n--) {
+				*pout ^= q;
+				pout++;
+			}
+			p += sp;
+		}
+	}
+	else if (strstr(mode, "AND")) {
+		LICE_pixel q = (uint32_t)operand;
+		LICE_pixel* pout;
+		while (h--) {
+			pout = p;
+			int n = w;
+			while (n--) {
+				*pout &= q;
+				pout++;
+			}
+			p += sp;
+		}
+	}
+	else if (strstr(mode, "OR")) {
+		LICE_pixel q = (uint32_t)operand;
+		LICE_pixel* pout;
+		while (h--) {
+			pout = p;
+			int n = w;
+			while (n--) {
+				*pout |= q;
+				pout++;
+			}
+			p += sp;
+		}
+	}
+	else if (strstr(mode, "SET_")) {
+		LICE_pixel mask = 0xFFFFFFFF; // which channels must be removed from bitmap pixels?
+		LICE_pixel* pout;
+		if (strchr(mode, 'A')) mask &= 0x00FFFFFF;
+		if (strchr(mode, 'R')) mask &= 0xFF00FFFF;
+		if (strchr(mode, 'G')) mask &= 0xFFFF00FF;
+		if (strchr(mode, 'B')) mask &= 0xFFFFFF00;
+		if (mask == 0xFFFFFFFF) return false;
+		LICE_pixel q = ((uint32_t)operand) & (uint32_t)(~mask);
+		while (h--)	{
+			pout = p;
+			int n = w;
+			while (n--) {
+				*pout = ((*pout) & mask) | q;
+				pout++;
+			}
+			p += sp;
+		}
+	}
+	else if (strstr(mode, "ALPHAMUL")) {
+		LICE_pixel *pout;
+		uint32_t a, a2;
+		while (h--) {
+			pout = p;
+			int n = w;
+			while (n--) {
+				if (*pout) { // Quickly skip blank pixels
+					a = (*pout & 0xFF000000);
+					if (a != 0xFF000000) { // And fully opaque pixels also don't need to change
+						if (a == 0)
+							*pout = 0;
+						else {
+							a2 = a >> 24; // Normalize 1..256 instead of 0..255
+							*pout = a | ((((*pout & 0x00FF0000) * a2) >> 8) & 0x00FF0000) | ((((*pout & 0x0000FF00) * a2) >> 8) & 0x0000FF00) | (((*pout & 0x000000FF) * a2) >> 8);
+						}	
+					}
+				}
+				pout++;
+			}
+			p += sp;
+		}
+	}
+	else
+		return false;
+
+	return true;
+}
 
 ///////////////////////////////////////////////////////////
 // Undocumented functions
 
-BOOL CALLBACK JS_Window_AttachTopmost_Callback_Remove(HWND hwnd, LPARAM lparam)
+void JS_Window_AttachTopmostPin(void* windowHWND)
 {
-	std::set<HWND>& s = *(reinterpret_cast<std::set<HWND>*>(lparam));
-	s.erase(hwnd);
-	return TRUE;
-}
-
-BOOL CALLBACK JS_Window_AttachTopmost_Callback_Get(HWND hwnd, LPARAM lparam)
-{
-	std::set<HWND>& s = *(reinterpret_cast<std::set<HWND>*>(lparam));
-	s.insert(hwnd);
-	return TRUE;
-}
-
-HWND JS_Window_AttachTopmostPin(HWND windowHWND)
-{
-	std::set<HWND> childWindows;
-	EnumChildWindows(windowHWND, JS_Window_AttachTopmost_Callback_Get, reinterpret_cast<LPARAM>(&childWindows));
-	AttachWindowTopmostButton((HWND)windowHWND);
-	SetWindowPos((HWND)windowHWND, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER); // Force re-draw frame, otherwise pin only becomes visible when window is moved.
-	EnumChildWindows(windowHWND, JS_Window_AttachTopmost_Callback_Remove, reinterpret_cast<LPARAM>(&childWindows));
-	if (childWindows.size() == 1)
-		return *childWindows.begin();
-	else
-		return nullptr;
+	if (ValidatePtr((HWND)windowHWND, "HWND")) {
+#ifdef _WIN32
+		if (GetWindowLongPtr((HWND)windowHWND, GWL_STYLE) & WS_THICKFRAME)
+#elif __APPLE__
+		if (GetWindowLong((HWND)windowHWND, GWL_STYLE) & WS_THICKFRAME)
+#elif __linux__ // Not yet available on Linux
+		return;
+#endif
+		{
+			AttachWindowTopmostButton((HWND)windowHWND);
+			SetWindowPos((HWND)windowHWND, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER); // Force re-draw frame, otherwise pin only becomes visible when window is moved.
+		}
+	}
 }
 
 void JS_Window_AttachResizeGrip(void* windowHWND)
 {
-	AttachWindowResizeGrip((HWND)windowHWND);
+	if (ValidatePtr((HWND)windowHWND, "HWND")) {
+#ifdef _WIN32
+		if (GetWindowLongPtr((HWND)windowHWND, GWL_STYLE) & WS_THICKFRAME)
+#elif __APPLE__
+		if (GetWindowLong((HWND)windowHWND, GWL_STYLE) & WS_THICKFRAME)
+#elif __linux__ // Not yet available on Linux
+		return;
+#endif
+		{
+			AttachWindowResizeGrip((HWND)windowHWND);
+			SetWindowPos((HWND)windowHWND, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER); // Force re-draw frame, otherwise pin only becomes visible when window is moved.
+		}
+	}
 }
 
 
@@ -2913,6 +3510,11 @@ int JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz)
 	else
 		textOut[0] = '\0';
 	return index;
+}
+
+void JS_ListView_EnsureVisible(HWND listviewHWND, int index, bool partialOK)
+{
+	ListView_EnsureVisible(listviewHWND, index, partialOK);
 }
 
 int JS_ListView_EnumSelItems(HWND listviewHWND, int index)
@@ -3026,6 +3628,10 @@ int JS_ListView_ListAllSelItems(HWND listviewHWND, char* itemsOutNeedBig, int it
 	}
 	return retval;
 }
+
+///////////////////////////////////////////////////////////////////////
+
+
 
 
 ///////////////////////////////////////////////////////////////////////

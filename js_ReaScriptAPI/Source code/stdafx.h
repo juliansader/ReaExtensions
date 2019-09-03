@@ -15,17 +15,19 @@
 #include <cstdint>
 #include <memory>
 
+
+// WARNING: THIS EXTENSION USES AN ALTERED lice.h, SINCE STANDARD lice.h HIDES SOME FUNCTIONS WHEN LICE_PROVIDED_BY_APP, 
+// EVEN THOUGH THOSE FUNCTIONS ARE NOT ACTUALLY PROVIDED BY REAPER.
+
+
 #define REAPERAPI_IMPLEMENT
-//#define REAPERAPI_MINIMAL // Only load the API functions #define'd by REAPERAPI_WANT_... This lowers the size of the dll by about 30kb, which isn't really worth the trouble.
-//#define REAPERAPI_WANT_plugin_register
-//#define REAPERAPI_WANT_MIDIEditor_GetMode
-//#define REAPERAPI_WANT_SetExtState
-//#define REAPERAPI_WANT_time_precise
-//#define REAPERAPI_WANT_all 50 lice functions...
-#ifndef LICE_PROVIDED_BY_APP
-#error "LICE_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DLICE_PROVIDED_BY_APP to command)."
-#endif
+//#ifndef LICE_PROVIDED_BY_APP
+//#error "LICE_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DLICE_PROVIDED_BY_APP to command)."
+//#endif
+#define LICE_PROVIDED_BY_APP
 #define LICE_FAVOR_SPEED
+#include "./WDL/lice/lice.h" // !!!!!!!!!!!!!!!! CUSTOMIZED LICE.H !!!!!!!!!!!!!!!!
+#include "./WDL/lice/lice_text.h"
 #ifndef SWELL_PROVIDED_BY_APP
 #error "SWELL_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DSWELL_PROVIDED_BY_APP to command)."
 #endif
@@ -34,6 +36,7 @@
 // So probably only necessary to #include reaper_plugins_functions.h
 #include "reaper_plugin_functions.h" 
 
+// Localization
 #define LOCALIZE_IMPORT_PREFIX "js_"
 #include "localize-import.h"
 #include "localize.h"
@@ -47,9 +50,14 @@
 	#define WINAPI __stdcall
 #elif __linux__
 	#include <gtk/gtk.h>
-	#include "swell-internal.h" // For definition of HWND__
+        //#include <png.h>
+	#define SWELL_TARGET_GDK // This is important since some parts of swell .h files are only compiled if this flag is set.
+	#include "./WDL/swell/swell-internal.h" // For definition of HWND__
 	#define WINAPI
 #else
+	//#define SWELL_TARGET_OSX
+	//#define __OBJC__
+	//#include "./WDL/swell/swell-internal.h"
 	#define WINAPI
 #endif
 
