@@ -32,6 +32,7 @@ bool  JS_Window_InvalidateRect(HWND windowHWND, int left, int top, int right, in
 void* JS_Window_FromPoint(int x, int y);
 
 void* JS_Window_GetParent(void* windowHWND);
+void* JS_Window_GetRoot(void* windowHWND);
 bool  JS_Window_IsChild(void* parentHWND, void* childHWND);
 void* JS_Window_GetRelated(void* windowHWND, const char* relation);
 HWND  JS_Window_FindChildByID(HWND parent, int ID);  // Functions that receive and return void* are in SWS style. Newer functions use HWND and let vararg wrapper typecast.
@@ -49,9 +50,9 @@ int   JS_Window_ListAllTop(char* listOutNeedBig, int listOutNeedBig_sz);
 int   JS_Window_ListFind(const char* title, bool exact, char* listOutNeedBig, int listOutNeedBig_sz);
 int   JS_MIDIEditor_ListAll(char* listOutNeedBig, int listOutNeedBig_sz);
 
+bool  JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height, char* ZOrderOptional, char* flagsOptional);
 void  JS_Window_Move(void* windowHWND, int left, int top);
 void  JS_Window_Resize(void* windowHWND, int width, int height);
-void  JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height);
 int   JS_GetLevel_ObjC(void* hwnd);
 int   JS_GetLevel(void* hwnd);
 bool  JS_Window_SetZOrder_ObjC(void* hwnd, void* insertAfterHWND);
@@ -59,8 +60,12 @@ bool  JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfte
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info);
 void  JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut);
 void  JS_Window_SetLong(void* windowHWND, const char* info, double value, double* retvalOut);
-bool  JS_Window_SetOpacity_ObjC(void* hwnd, double alpha);
+bool  JS_Window_SetStyle(void* windowHWND, char* style);
 bool  JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value);
+#ifdef __APPLE__
+void* JS_GetNSWindowFromSwellHWND(void* hwnd);
+bool  JS_Window_SetOpacity_ObjC(void* hwnd, double alpha);
+#endif
 
 void  JS_Window_SetFocus(void* windowHWND);
 void* JS_Window_GetFocus();
@@ -218,6 +223,6 @@ AudioWriter* Xen_AudioWriter_Create(const char* filename, int numchans, int samp
 void Xen_AudioWriter_Destroy(AudioWriter* aw);
 int Xen_AudioWriter_Write(AudioWriter* aw, double* data, int numframes, int offset);
 int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffset, int numframes, int numchans, double samplerate, double positioninfile);
-int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop);
+int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop, int startOutputChannel);
 int Xen_StopSourcePreview(int id);
 void Xen_DestroyPreviewSystem();

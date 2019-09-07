@@ -2,7 +2,7 @@
 #import <objc/objc-runtime.h>
 
 // The NSWindow is the container of the NSView child windows.
-NSWindow* JS_GetNSWindowFromSwellHWND(void* hwnd)
+void* JS_GetNSWindowFromSwellHWND(void* hwnd)
 {
 	NSWindow* window = NULL;
 	if (hwnd)
@@ -20,7 +20,7 @@ NSWindow* JS_GetNSWindowFromSwellHWND(void* hwnd)
 
 bool JS_Window_SetOpacity_ObjC(void* hwnd, double alpha)
 {
-	NSWindow* window = JS_GetNSWindowFromSwellHWND(hwnd);
+	NSWindow* window = (NSWindow*)JS_GetNSWindowFromSwellHWND(hwnd);
 	
 	if (window)
 	{
@@ -39,7 +39,7 @@ bool JS_Window_SetOpacity_ObjC(void* hwnd, double alpha)
 // Get the NSWindowLevel of a swell HWND.
 int JS_GetLevel_ObjC(void* hwnd)
 {
-	NSWindow* window = JS_GetNSWindowFromSwellHWND(hwnd);
+	NSWindow* window = (NSWindow*)JS_GetNSWindowFromSwellHWND(hwnd);
 	
 	if (window)
 		return (int)[window level];
@@ -69,7 +69,7 @@ bool JS_Window_SetZOrder_ObjC(void* hwnd, void* insertAfterHWND)
 		which is just slightly above the main window at 0 = NSNormalWindowLevel.
 */
 {
-	NSWindow* window = JS_GetNSWindowFromSwellHWND(hwnd);
+	NSWindow* window = (NSWindow*)JS_GetNSWindowFromSwellHWND(hwnd);
 	
 	if (window)
 	{
@@ -93,7 +93,7 @@ bool JS_Window_SetZOrder_ObjC(void* hwnd, void* insertAfterHWND)
 				[window orderWindow:NSWindowBelow relativeTo:0];
 				return true;
 			default: // insertAfter is a target window
-				afterThisWindow = JS_GetNSWindowFromSwellHWND(insertAfterHWND);
+				afterThisWindow = (NSWindow*)JS_GetNSWindowFromSwellHWND(insertAfterHWND);
 				if (afterThisWindow)
 				{
 					[window setLevel: [afterThisWindow level]];

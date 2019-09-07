@@ -2,7 +2,12 @@
 
 #define _CRT_SECURE_NO_WARNINGS 1
 #define _CRT_NONSTDC_NO_DEPRECATE 1
-
+/*
+#ifdef _WIN32
+#define UNICODE
+#define _UNICODE
+#endif
+*/
 #include <cstdio>
 #include <string>
 #include <cstdlib>
@@ -16,10 +21,8 @@
 #include <memory>
 
 
-// WARNING: THIS EXTENSION USES AN ALTERED lice.h, SINCE STANDARD lice.h HIDES SOME FUNCTIONS WHEN LICE_PROVIDED_BY_APP, 
+// WARNING: THIS EXTENSION USES A CUSTOMIZED lice.h, SINCE STANDARD lice.h HIDES SOME FUNCTIONS WHEN LICE_PROVIDED_BY_APP, 
 // EVEN THOUGH THOSE FUNCTIONS ARE NOT ACTUALLY PROVIDED BY REAPER.
-
-
 #define REAPERAPI_IMPLEMENT
 //#ifndef LICE_PROVIDED_BY_APP
 //#error "LICE_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DLICE_PROVIDED_BY_APP to command)."
@@ -28,12 +31,15 @@
 #define LICE_FAVOR_SPEED
 #include "./WDL/lice/lice.h" // !!!!!!!!!!!!!!!! CUSTOMIZED LICE.H !!!!!!!!!!!!!!!!
 #include "./WDL/lice/lice_text.h"
-#ifndef SWELL_PROVIDED_BY_APP
-#error "SWELL_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DSWELL_PROVIDED_BY_APP to command)."
+#ifndef JS_REASCRIPTAPI_ADJUSTED_LICE_H // Defined in customized lice.h
+#error "This extension requires a customized lice.h, since standard lice.h hides some functions when LICE_PROVIDED_BY_APP."
 #endif
 
 // reaper_plugin_functions.h #include's reaper_plugin.h, which in turn #include's either windows.h or swell.h, depending on platform.
 // So probably only necessary to #include reaper_plugins_functions.h
+#ifndef SWELL_PROVIDED_BY_APP
+#error "SWELL_PROVIDED_BY_APP should be defined for entire project (if using command line, add -DSWELL_PROVIDED_BY_APP to command)."
+#endif
 #include "reaper_plugin_functions.h" 
 
 // Localization
@@ -47,6 +53,8 @@
 	#include <Shlobj.h>
 	//#include <Shlobj_core.h>
 	#include <wingdi.h>
+	//#include ".\WDL\wdlutf8.h" // WDL is not only used for macOS and Linux!  These files provide an interface between REAPER's UTF-8 output and Windows' WCS Unicode format.
+	//#include ".\WDL\win32_utf8.h"
 	#define WINAPI __stdcall
 #elif __linux__
 	#include <gtk/gtk.h>

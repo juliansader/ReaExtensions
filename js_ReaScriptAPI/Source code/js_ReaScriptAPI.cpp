@@ -182,12 +182,16 @@ v0.990
  * New: JS_ListView_EnsureVisible.
  * New: More options for Window_Show.
  * New: JS_Window_SetZOrder options work on macOS.
-*/
+v0.991
+ * Improved: Xen_StartSourcePreview: Add support for setting hardware output channels for PCM_source previews
+ * Improved: JS_Window_SetZOrder and JS_Window_SetPos.
+ * New: JS_Window_SetStyle: Can add or remove frames from gfx and other windows.
+ */
 
 
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.990;
+	*versionOut = 0.991;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -1516,42 +1520,44 @@ callbacktype CALLBACK JS_Window_Create_WinProc(HWND hwnd, UINT msg, WPARAM wPara
 #define WS_DLGFRAME WS_CAPTION
 #define WS_CLIPCHILDREN 0
 #define WS_POPUP 0
+#define WS_MINIMIZE 0x20000000
+#define WS_MAXIMIZE 0x01000000
 #endif
 
-void JS_ConvertStringToStyle(char* styleString, DWORD* style, int* show)
+DWORD JS_ConvertStringToStyle(char* styleString)
 {
-	*show = SW_SHOW; // Default values if styleOptional not specified.
-	*style = WS_OVERLAPPEDWINDOW;
+	//*show = SW_SHOW; // Default values if styleOptional not specified.
+	DWORD style = WS_OVERLAPPEDWINDOW;
 
 	if (styleString && *styleString) {
-		*style = 0;
-		// To distinguish MAXIMIZEBOX from MAXIMIZE, alter the M of all MAXIMIZEBOX's.
+		style = 0;
+		// To distinguish MAXIMIZEBOX from MAXIMIZE, remove the M's of all MAXIMIZEBOXes.
 		// swell doesn't implement WS_SHOWMAXIMIZED and WS_SHOWMINIMIZED, so will use ShowWindow's options instead.
 		char* box;
-		while (box = strstr(styleString, "MAXIMIZEBOX")) { *style |= (WS_MAXIMIZEBOX | WS_SYSMENU); *box = 'N'; }
-		if (strstr(styleString, "MAXIMIZE"))		*show = SW_SHOWMAXIMIZED;
-		while (box = strstr(styleString, "MINIMIZEBOX")) { *style |= (WS_MINIMIZEBOX | WS_SYSMENU); *box = 'N'; }
-		if (strstr(styleString, "MINIMIZE") || strstr(styleString, "ICONIC")) *show = SW_SHOWMINIMIZED;
-
-		if (strstr(styleString, "CHILD"))			*style |= WS_CHILD;
-		//if (strstr(styleString, "CHILDWINDOW"))	*style |= WS_CHILDWINDOW;
-		if (strstr(styleString, "CLIPSIBLINGS"))	*style |= WS_CLIPSIBLINGS;
-		if (strstr(styleString, "DISABLED"))		*style |= WS_DISABLED;
-		if (strstr(styleString, "VISIBLE"))			*style |= WS_VISIBLE;
-		if (strstr(styleString, "CAPTION"))			*style |= WS_CAPTION;
-		if (strstr(styleString, "VSCROLL"))			*style |= WS_VSCROLL;
-		if (strstr(styleString, "HSCROLL"))			*style |= WS_HSCROLL;
-		if (strstr(styleString, "SYSMENU"))			*style |= WS_SYSMENU;
-		if (strstr(styleString, "THICKFRAME")  || strstr(styleString, "SIZEBOX"))			*style |= WS_SIZEBOX;
-		if (strstr(styleString, "GROUP"))			*style |= WS_GROUP;
-		if (strstr(styleString, "TABSTOP"))			*style |= WS_TABSTOP;
-		if (strstr(styleString, "OVERLAPPED")  || strstr(styleString, "TILED"))				*style |= WS_OVERLAPPED;
-		if (strstr(styleString, "TILEDWINDOW") || strstr(styleString, "OVERLAPPEDWINDOW"))	*style |= WS_OVERLAPPEDWINDOW;
-		if (strstr(styleString, "DLGFRAME"))		*style |= WS_DLGFRAME;
-		if (strstr(styleString, "BORDER"))			*style |= WS_BORDER;
-		if (strstr(styleString, "CLIPCHILDREN"))	*style |= WS_CLIPCHILDREN;
-		if (strstr(styleString, "POPUP"))			{ *style &= (~(WS_CAPTION | WS_CHILD)); *style |= WS_POPUP; } // swell doesn't actually implement WS_POPUP as separate *style
+		while (box = strstr(styleString, "MAXIMIZEBOX"))	{ style |= (WS_MAXIMIZEBOX | WS_SYSMENU); *box = 'N'; }
+		while (box = strstr(styleString, "MINIMIZEBOX"))	{ style |= (WS_MINIMIZEBOX | WS_SYSMENU); *box = 'N'; }
+		if (strstr(styleString, "MAXIMIZE"))		style |= WS_MAXIMIZE;
+		if (strstr(styleString, "CHILD"))			style |= WS_CHILD;
+		//if (strstr(styleString, "CHILDWINDOW"))	style |= WS_CHILDWINDOW;
+		if (strstr(styleString, "CLIPSIBLINGS"))	style |= WS_CLIPSIBLINGS;
+		if (strstr(styleString, "DISABLED"))		style |= WS_DISABLED;
+		if (strstr(styleString, "VISIBLE"))			style |= WS_VISIBLE;
+		if (strstr(styleString, "CAPTION"))			style |= WS_CAPTION;
+		if (strstr(styleString, "VSCROLL"))			style |= WS_VSCROLL;
+		if (strstr(styleString, "HSCROLL"))			style |= WS_HSCROLL;
+		if (strstr(styleString, "SYSMENU"))			style |= WS_SYSMENU;
+		if (strstr(styleString, "GROUP"))			style |= WS_GROUP;
+		if (strstr(styleString, "TABSTOP"))			style |= WS_TABSTOP;
+		if (strstr(styleString, "DLGFRAME"))		style |= WS_DLGFRAME;
+		if (strstr(styleString, "BORDER"))			style |= WS_BORDER;
+		if (strstr(styleString, "CLIPCHILDREN"))	style |= WS_CLIPCHILDREN;
+		if (strstr(styleString, "MINIMIZE")		|| strstr(styleString, "ICONIC"))			style |= WS_MINIMIZE;
+		if (strstr(styleString, "THICKFRAME")	|| strstr(styleString, "SIZEBOX"))			style |= WS_SIZEBOX;
+		if (strstr(styleString, "OVERLAPPED")	|| strstr(styleString, "TILED"))			style |= WS_OVERLAPPED;
+		if (strstr(styleString, "TILEDWINDOW")	|| strstr(styleString, "OVERLAPPEDWINDOW"))	style |= WS_OVERLAPPEDWINDOW;
+		if (strstr(styleString, "POPUP"))			{ style &= (~(WS_CAPTION | WS_CHILD));	style |= WS_POPUP; } // swell doesn't actually implement WS_POPUP as separate style
 	}
+	return style;
 }
 
 void* JS_Window_Create(const char* title, const char* className, int x, int y, int w, int h, char* styleOptional, void* ownerHWNDOptional)
@@ -1561,9 +1567,7 @@ void* JS_Window_Create(const char* title, const char* className, int x, int y, i
 	
 	if ((ownerHWNDOptional==nullptr) || ValidatePtr((HWND)ownerHWNDOptional, "HWND")) // NULL owner is allowed, but not an invalid one
 	{
-		int show;
-		DWORD style;
-		JS_ConvertStringToStyle(styleOptional, &style, &show);
+		DWORD style = JS_ConvertStringToStyle(styleOptional);
 
 		// On Windows, each new class name requires a new class.
 	#ifdef _WIN32
@@ -1609,7 +1613,9 @@ void* JS_Window_Create(const char* title, const char* className, int x, int y, i
 			);
 			if (hwnd)
 			{
-				ShowWindow(hwnd, show);
+				if		(style&WS_MINIMIZE)	ShowWindow(hwnd, SW_SHOWMINIMIZED);
+				else if (style&WS_MAXIMIZE) ShowWindow(hwnd, SW_SHOWMAXIMIZED);
+				else						ShowWindow(hwnd, SW_SHOWNORMAL);
 				UpdateWindow(hwnd);
 			}
 		}
@@ -1625,16 +1631,160 @@ void* JS_Window_Create(const char* title, const char* className, int x, int y, i
 			SetWindowLong(hwnd, GWL_STYLE, style);
 			SetWindowText(hwnd, title);
 			SetWindowPos(hwnd, HWND_TOP, x, y, w, h, SWP_SHOWWINDOW | SWP_NOCOPYBITS | SWP_FRAMECHANGED);
-			#ifdef __APPLE__
+		#ifdef __APPLE__
 			JS_Window_SetZOrder_ObjC(hwnd, HWND_TOP); // swell's SetWindowPos doesn't work well for Z-ordering
-			#endif
-			ShowWindow(hwnd, show);
-			//UpdateWindow(hwnd);
+		#endif
+			if (style&WS_MINIMIZE)	ShowWindow(hwnd, SW_SHOWMINIMIZED); //swell doesn't implement WS_MAXIMIZED and WS_VISIBLE.  The latter is simply 0 in swell.
+			else					ShowWindow(hwnd, SW_SHOW);
+			UpdateWindow(hwnd);
 		}
 	#endif
 	}
 	return hwnd;
 }
+
+/////////////////////////////////////////////////////////////////
+// Function based on SetWindowPos
+
+#define SETWINDOWPOS_INVALID_INSERTAFTER (HWND)(-3) // Some value that should not be one of the valid insertAfter values.
+bool JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height, char* ZOrderOptional, char* flagsOptional)
+{
+	if (ValidatePtr(windowHWND, "HWND"))
+	{
+		// For compatibility with older versions, when ZOrder and flags are not supplied, simply reposition.
+		if (!(ZOrderOptional && *ZOrderOptional) && !(flagsOptional && *flagsOptional))
+		{
+			SetWindowPos((HWND)windowHWND, NULL, left, top, width, height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+			return true;
+		}
+
+		// If ZOrder or flags are given, do full-scale SetWindowPos
+		else
+		{
+			// Convert flags string to integer
+			UINT intFlags = 0;
+			if (flagsOptional)
+			{
+				if (strstr(flagsOptional, "NOMOVE"))			intFlags = intFlags | SWP_NOMOVE;
+				if (strstr(flagsOptional, "NOSIZE"))			intFlags = intFlags | SWP_NOSIZE;
+				if (strstr(flagsOptional, "NOZORDER"))			intFlags = intFlags | SWP_NOZORDER;
+				if (strstr(flagsOptional, "NOACTIVATE"))		intFlags = intFlags | SWP_NOACTIVATE;
+				if (strstr(flagsOptional, "SHOWWINDOW"))		intFlags = intFlags | SWP_SHOWWINDOW;
+				if (strstr(flagsOptional, "FRAMECHANGED"))		intFlags = intFlags | SWP_FRAMECHANGED;
+				if (strstr(flagsOptional, "NOCOPYBITS"))		intFlags = intFlags | SWP_NOCOPYBITS;
+#ifdef _WIN32
+				if (strstr(flagsOptional, "ASYNCWINDOWPOS"))	intFlags = intFlags | SWP_ASYNCWINDOWPOS;
+				if (strstr(flagsOptional, "DEFERERASE"))		intFlags = intFlags | SWP_DEFERERASE;
+				if (strstr(flagsOptional, "DRAWFRAME"))			intFlags = intFlags | SWP_DRAWFRAME;
+				if (strstr(flagsOptional, "HIDEWINDOW"))		intFlags = intFlags | SWP_HIDEWINDOW;
+				if (strstr(flagsOptional, "NOOWNERZORDER"))		intFlags = intFlags | SWP_NOOWNERZORDER;
+				if (strstr(flagsOptional, "NOREDRAW"))			intFlags = intFlags | SWP_NOREDRAW;
+				if (strstr(flagsOptional, "NOREPOSITION"))		intFlags = intFlags | SWP_NOREPOSITION;
+				if (strstr(flagsOptional, "NOSENDCHANGING"))	intFlags = intFlags | SWP_NOSENDCHANGING;
+#endif
+			}
+
+			// Convert insertAfter string to HWND
+			HWND insertAfterHWND = SETWINDOWPOS_INVALID_INSERTAFTER;
+			if (ZOrderOptional && !(intFlags&SWP_NOZORDER)) // ZOrder only relevant if NOZORDER flag is not set
+			{
+				if (strstr(ZOrderOptional, "BOTTOM"))		insertAfterHWND = HWND_BOTTOM;
+				else if (strstr(ZOrderOptional, "NOTOPMOST"))	insertAfterHWND = HWND_NOTOPMOST;
+				else if (strstr(ZOrderOptional, "TOPMOST"))		insertAfterHWND = HWND_TOPMOST;
+				else if (strstr(ZOrderOptional, "TOP"))			insertAfterHWND = HWND_TOP;
+				else
+				{ // Check if tostring(hwnd) was used, which should give "userdata: 0000somenumber"
+					const char* p = strrchr(ZOrderOptional, ' ');
+					if (!p) p = ZOrderOptional;
+					HWND h = (HWND)(void*)strtoll(p, NULL, 16);
+					if (ValidatePtr(h, "HWND"))
+						insertAfterHWND = h;
+				}
+			}
+
+			// If ZOrder, only continue if insertAfter has been set
+			if ((intFlags&SWP_NOZORDER) || (insertAfterHWND != SETWINDOWPOS_INVALID_INSERTAFTER))
+			{
+#ifdef _WIN32
+				return SetWindowPos((HWND)windowHWND, insertAfterHWND, left, top, width, height, intFlags);
+#elif __APPLE__
+				SetWindowPos((HWND)windowHWND, insertAfterHWND, left, top, width, height, intFlags);
+				if (!(intFlags&SWP_NOZORDER))
+					return JS_Window_SetZOrder_ObjC(windowHWND, insertAfterHWND);
+				else
+					return true;
+#elif __linux__
+				SetWindowPos((HWND)windowHWND, insertAfterHWND, left, top, width, height, intFlags);
+				return true;
+#endif
+			}
+		}
+	}
+	return false;
+}
+
+/*
+bool JS_Window_SetPos(void* windowHWND, const char* ZOrder, int x, int y, int w, int h, const char* flags)
+{
+	if (ValidatePtr(windowHWND, "HWND"))
+	{
+		// Convert flags string to integer
+		UINT intFlags = 0;
+		if (strstr(flags, "NOMOVE"))			intFlags = intFlags | SWP_NOMOVE;
+		if (strstr(flags, "NOSIZE"))			intFlags = intFlags | SWP_NOSIZE;
+		if (strstr(flags, "NOZORDER"))			intFlags = intFlags | SWP_NOZORDER;
+		if (strstr(flags, "NOACTIVATE"))		intFlags = intFlags | SWP_NOACTIVATE;
+		if (strstr(flags, "SHOWWINDOW"))		intFlags = intFlags | SWP_SHOWWINDOW;
+		if (strstr(flags, "FRAMECHANGED"))		intFlags = intFlags | SWP_FRAMECHANGED;
+		if (strstr(flags, "NOCOPYBITS"))		intFlags = intFlags | SWP_NOCOPYBITS;
+#ifdef _WIN32
+		if (strstr(flags, "ASYNCWINDOWPOS"))	intFlags = intFlags | SWP_ASYNCWINDOWPOS;
+		if (strstr(flags, "DEFERERASE"))		intFlags = intFlags | SWP_DEFERERASE;
+		if (strstr(flags, "DRAWFRAME"))			intFlags = intFlags | SWP_DRAWFRAME;
+		if (strstr(flags, "HIDEWINDOW"))		intFlags = intFlags | SWP_HIDEWINDOW;
+		if (strstr(flags, "NOOWNERZORDER"))		intFlags = intFlags | SWP_NOOWNERZORDER;
+		if (strstr(flags, "NOREDRAW"))			intFlags = intFlags | SWP_NOREDRAW;
+		if (strstr(flags, "NOREPOSITION"))		intFlags = intFlags | SWP_NOREPOSITION;
+		if (strstr(flags, "NOSENDCHANGING"))	intFlags = intFlags | SWP_NOSENDCHANGING;
+#endif
+
+		// Convert insertAfter string to HWND
+		HWND insertAfterHWND = SETWINDOWPOS_INVALID_INSERTAFTER;
+		if (!(intFlags&SWP_NOZORDER))
+		{
+			if (strstr(ZOrder, "BOTTOM"))		insertAfterHWND = HWND_BOTTOM;
+			else if (strstr(ZOrder, "NOTOPMOST"))		insertAfterHWND = HWND_NOTOPMOST;
+			else if (strstr(ZOrder, "TOPMOST"))	insertAfterHWND = HWND_TOPMOST;
+			else if (strstr(ZOrder, "TOP"))		insertAfterHWND = HWND_TOP;
+			else
+			{ // Check if tostring(hwnd) was used, which should give "userdata: 0000somenumber"
+				const char* p = strrchr(ZOrder, ' ');
+				if (!p) p = ZOrder;
+				HWND h = (HWND)(void*)strtoll(p, NULL, 16);
+				if (ValidatePtr(h, "HWND"))
+					insertAfterHWND = h;
+			}
+		}
+
+		// If ZOrder, only continue if insertAfter has been set
+		if ((intFlags&SWP_NOZORDER) || (insertAfterHWND != SETWINDOWPOS_INVALID_INSERTAFTER))
+		{
+#ifdef _WIN32
+			return SetWindowPos((HWND)windowHWND, insertAfterHWND, x, y, w, h, intFlags);
+#elif __APPLE__
+			SetWindowPos((HWND)windowHWND, insertAfterHWND, x, y, w, h, intFlags);
+			if (!(intFlags&SWP_NOZORDER))
+				return JS_Window_SetZOrder_ObjC(windowHWND, insertAfterHWND);
+			else
+				return true;
+#elif __linux__
+			return true;
+#endif
+		}
+	}
+	return false;
+}
+*/
 
 // This function moves windows without resizing or requiring any info about window size.
 void JS_Window_Move(void* windowHWND, int left, int top)
@@ -1646,11 +1796,6 @@ void JS_Window_Move(void* windowHWND, int left, int top)
 void JS_Window_Resize(void* windowHWND, int width, int height)
 {
 	SetWindowPos((HWND)windowHWND, NULL, 0, 0, width, height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE);
-}
-
-void JS_Window_SetPosition(void* windowHWND, int left, int top, int width, int height)
-{
-	SetWindowPos((HWND)windowHWND, NULL, left, top, width, height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER );
 }
 
 // Gets the NSWindowLevel on macOS
@@ -1667,32 +1812,82 @@ int JS_GetLevel(void* hwnd)
 // So I tried to code my own Z ordering
 bool JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfterHWNDOptional)
 {
-	constexpr intptr_t CHECK_NO_FLAG = -3; // Some value that should not be one of the existing flags.
-	if (ValidatePtr(windowHWND, "HWND")) 
+	if (ValidatePtr(windowHWND, "HWND"))
 	{
-		HWND insertAfter = (HWND)CHECK_NO_FLAG;
-		if (strstr(ZOrder, "BO"))		insertAfter = HWND_BOTTOM;
-		else if (strstr(ZOrder, "NOT"))		insertAfter = HWND_NOTOPMOST;
-		else if (strstr(ZOrder, "TOPM"))	insertAfter = HWND_TOPMOST;
+		HWND insertAfter = SETWINDOWPOS_INVALID_INSERTAFTER;
+		if (strstr(ZOrder, "BOTTOM"))		insertAfter = HWND_BOTTOM;
+		else if (strstr(ZOrder, "NOTOP"))	insertAfter = HWND_NOTOPMOST;
+		else if (strstr(ZOrder, "TOPMOST"))	insertAfter = HWND_TOPMOST;
 		else if (strstr(ZOrder, "TOP"))		insertAfter = HWND_TOP; // Top
-		#ifndef __linux__ // swell doesn't provide all options
-		else if (strstr(ZOrder, "IN")) 
+#ifndef __linux__ // swell doesn't provide all options
+		else if (strstr(ZOrder, "INSERT") || strstr(ZOrder, "AFTER"))
 		{
 			if (insertAfterHWNDOptional && ValidatePtr(insertAfterHWNDOptional, "HWND"))
 				insertAfter = (HWND)insertAfterHWNDOptional;
 		}
-		#endif
+#endif
+		else
+		{ // Check if tostring(hwnd) was used, which should give "userdata: 0000somenumber"
+			const char* p = strrchr(ZOrder, ' ');
+			if (!p) p = ZOrder;
+			HWND h = (HWND)(void*)strtoll(p, NULL, 16);
+			if (ValidatePtr(h, "HWND"))
+				insertAfter = h;
+			/*
+			for (const char* p = ZOrder; *p != 0; p++)
+			{
+				if (isdigit(*p))
+				{
+					HWND h = (HWND)(intptr_t)strtoll(p, NULL, 16);
+					if (ValidatePtr(h, "HWND"))
+						insertAfter = h;
+					break;
+				}
+			}*/
+		}
 
-		if (insertAfter != (HWND)CHECK_NO_FLAG) { // Was given a proper new value?
-		#ifdef _WIN32
+		if (insertAfter != SETWINDOWPOS_INVALID_INSERTAFTER) { // Was given a proper new value?
+#ifdef _WIN32
 			return !!SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-		#elif __linux__
+#elif __linux__
 			SetWindowPos((HWND)windowHWND, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 			return true;
-		#else
+#else
 			return JS_Window_SetZOrder_ObjC(windowHWND, insertAfter);
-		#endif
+#endif
 		}
+	}
+	return false;
+}
+
+bool JS_Window_SetStyle(void* windowHWND, char* style)
+{
+	if (JS_Window_IsWindow(windowHWND))
+	{
+		// Try to get the toplevel window, which actually has a style to display
+		// Except on macOS.  Apparently, macOS toplevel NSWindows, don't work with these styles?
+	#ifdef __APPLE__
+		HWND rootHWND = (HWND)windowHWND;
+	#else
+		HWND rootHWND = (HWND)JS_Window_GetRoot(windowHWND);
+		if (!ValidatePtr(rootHWND, "HWND")) rootHWND = (HWND)windowHWND;
+	#endif
+		
+		DWORD styleNumber = JS_ConvertStringToStyle(style);
+	#ifdef _WIN32
+		SetWindowLongPtr(rootHWND, GWL_STYLE, styleNumber);
+	#elif __linux__
+		ShowWindow(rootHWND, SW_HIDE); // On Linux (at least, on my distribution), must first hide
+		SetWindowLong(rootHWND, GWL_STYLE, styleNumber);
+	#else
+		SetWindowLong(rootHWND, GWL_STYLE, styleNumber); 
+	#endif
+		//According to stuff in the Web, SetWindowPos with FRAMECHANGED is necessary and sufficient to apply new frame style. Doesn't seem to work for me. Use ShowWindow instead.
+		//SetWindowPos(rootHWND, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOSIZE | SWP_NOZORDER);
+		if (styleNumber&WS_MINIMIZE)		ShowWindow(rootHWND, SW_SHOWMINIMIZED);
+		else if (styleNumber&WS_MAXIMIZE)	ShowWindow(rootHWND, SW_SHOWMAXIMIZED);
+		else					ShowWindow(rootHWND, SW_SHOW);
+		return true;
 	}
 	return false;
 }
@@ -1700,6 +1895,31 @@ bool JS_Window_SetZOrder(void* windowHWND, const char* ZOrder, void* insertAfter
 void JS_Window_Update(HWND windowHWND)
 {
 	UpdateWindow(windowHWND);
+}
+
+//!!!! This function does not work yet, since the NSWindow* returned on macOS isn't really the same type of window as the NSViews
+//!!!! that most functions seem to work with.  NSWindow is more of a container.
+void* JS_Window_GetRoot(void* windowHWND)
+{
+#ifdef _WIN32
+	return GetAncestor((HWND)windowHWND, GA_ROOT);
+#elif __linux__
+	// Definitions of swell's HWND, m_oswindow etc can be found in swell-internal.h
+	GetNextAncestorWindow:
+	if (((HWND)windowHWND)->m_oswindow) // Does this HWND correspond to a GDKWindow?
+	{
+		return gdk_window_get_effective_toplevel((GdkWindow*)(((HWND)windowHWND)->m_oswindow));
+	}
+	else if (((HWND)windowHWND)->m_parent) // Else, try to go high in hierarchy, until oswindow is found
+	{
+		windowHWND = ((HWND)windowHWND)->m_parent;
+		goto GetNextAncestorWindow;
+	}
+	else 
+		return nullptr;
+#else
+	return JS_GetNSWindowFromSwellHWND(windowHWND);
+#endif
 }
 
 bool JS_Window_InvalidateRect(HWND windowHWND, int left, int top, int right, int bottom, bool eraseBackground)
@@ -3748,7 +3968,7 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 class PreviewEntry
 {
 public:
-	PreviewEntry(int id, PCM_source* src, double gain, bool loop)
+	PreviewEntry(int id, PCM_source* src, double gain, bool loop, int startOutputChannel)
 	{
 		m_id = id;
 		memset(&m_preg, 0, sizeof(preview_register_t));
@@ -3793,6 +4013,7 @@ public:
 		if (gain > 8.0)
 			gain = 8.0;
 		m_preg.volume = gain;
+		m_preg.m_out_chan = startOutputChannel;
 	}
 	~PreviewEntry()
 	{
@@ -3838,9 +4059,9 @@ public:
 	{
 		KillTimer(NULL, m_timer_id);
 	}
-	int startPreview(PCM_source* src, double gain, bool loop)
+	int startPreview(PCM_source* src, double gain, bool loop, int startOutputChannel)
 	{
-		auto entry = std::make_unique<PreviewEntry>(m_preview_id_count, src, gain, loop);
+		auto entry = std::make_unique<PreviewEntry>(m_preview_id_count, src, gain, loop, startOutputChannel);
 		if (entry->m_preg.src)
 		{
 			PlayPreview(&entry->m_preg);
@@ -3914,11 +4135,13 @@ private:
 
 
 
-int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop)
+int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop, int startOutputChannel)
 {
 	if (g_sourcepreviewman == nullptr)
 		g_sourcepreviewman = new PCMSourcePlayerManager;
-	return (int)g_sourcepreviewman->startPreview(src, gain, loop);
+	if (startOutputChannel < 0 || startOutputChannel > 1000)
+		startOutputChannel = 0;
+	return (int)g_sourcepreviewman->startPreview(src, gain, loop, startOutputChannel);
 }
 
 int Xen_StopSourcePreview(int preview_id)
