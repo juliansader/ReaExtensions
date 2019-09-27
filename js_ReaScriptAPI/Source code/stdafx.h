@@ -53,8 +53,8 @@
 	#include <Shlobj.h>
 	//#include <Shlobj_core.h>
 	#include <wingdi.h>
-	//#include ".\WDL\wdlutf8.h" // WDL is not only used for macOS and Linux!  These files provide an interface between REAPER's UTF-8 output and Windows' WCS Unicode format.
-	//#include ".\WDL\win32_utf8.h"
+	#include ".\WDL\wdlutf8.h" // WDL is not only used for macOS and Linux!  These files provide an interface between REAPER's UTF-8 output and Windows' WCS Unicode format.
+	#include ".\WDL\win32_utf8.h"
 	#define WINAPI __stdcall
 #elif __linux__
 	#include <gtk/gtk.h>

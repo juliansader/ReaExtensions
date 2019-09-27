@@ -78,7 +78,7 @@ void  JS_Window_Show(void* windowHWND, const char* state);
 bool  JS_Window_IsVisible(void* windowHWND);
 
 bool  JS_Window_SetTitle(void* windowHWND, const char* title);
-void  JS_Window_GetTitle(void* windowHWND, char* titleOut, int titleOut_sz);
+void  JS_Window_GetTitle(void* windowHWND, char* titleOutNeedBig, int titleOutNeedBig_sz);
 
 void  JS_Window_GetClassName(HWND windowHWND, char* classOut, int classOut_sz);
 
