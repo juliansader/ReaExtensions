@@ -85,7 +85,7 @@ function swell_rc2cpp_dialog($fp) // returns array with ["data"] and optionally 
   $retstr .= '#ifdef __APPLE__' . "\n";
   $retstr .= '  #define SWELL_DLG_SCALE_AUTOGEN 1.7' . "\n";
   $retstr .= '#else' . "\n";
-  $retstr .= '  #define SWELL_DLG_SCALE_AUTOGEN 1.8' . "\n";
+  $retstr .= '  #define SWELL_DLG_SCALE_AUTOGEN 1.9' . "\n";
   $retstr .= '#endif' . "\n";
   $retstr .= '#endif' . "\n";
   $retstr .= '#ifndef SWELL_DLG_FLAGS_AUTOGEN' . "\n";
@@ -206,6 +206,10 @@ function swell_rc2cpp_dialog($fp) // returns array with ["data"] and optionally 
                 else if ($parms[$rdidx] == 'WS_EX_ACCEPTFILES') 
                 {
                   if (!$opmode) $dlg_styles .= "|SWELL_DLG_WS_DROPTARGET";
+                }
+                else if ($parms[$rdidx] == 'WS_CLIPSIBLINGS') 
+                {
+                  if (!$opmode) $dlg_styles .= "|WS_CLIPSIBLINGS";
                 }
                 else $opmode=0;
                 $rdidx++;

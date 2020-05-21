@@ -16,7 +16,14 @@ static void* __vararg_JS_Localize(void** arglist, int numparms)
 	return NULL;
 }
 
-//////////////////////////////////////////////////////////////////////////////////
+/*/////////////////////////////////////////////////////////////////////////////////
+
+static void* __vararg_JS_Zip_Add(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Zip_Add((char*)arglist[0], (char*)arglist[1]);
+}
+
+*//////////////////////////////////////////////////////////////////////////////////
 
 static void* __vararg_JS_VKeys_GetState(void** arglist, int numparms)
 {
@@ -45,18 +52,23 @@ static void* __vararg_JS_VKeys_Intercept(void** arglist, int numparms)
 
 static void* __vararg_JS_Composite(void** arglist, int numparms)
 {
-	return (void*)(intptr_t)JS_Composite((HWND)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (LICE_IBitmap*)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], (int)(intptr_t)arglist[8], (int)(intptr_t)arglist[9]);
+	return (void*)(intptr_t)JS_Composite((HWND)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2], (int)(intptr_t)arglist[3], (int)(intptr_t)arglist[4], (LICE_IBitmap*)arglist[5], (int)(intptr_t)arglist[6], (int)(intptr_t)arglist[7], (int)(intptr_t)arglist[8], (int)(intptr_t)arglist[9], numparms > 10 ? ((bool)arglist[10] && *(bool*)arglist[10]) : false);
 }
 
 static void* __vararg_JS_Composite_Unlink(void** arglist, int numparms)
 {
-	JS_Composite_Unlink((HWND)arglist[0], (LICE_IBitmap*)arglist[1]);
+	JS_Composite_Unlink((HWND)arglist[0], numparms > 1 ? (LICE_IBitmap*)arglist[1] : nullptr, numparms > 2 ? ((bool)arglist[2] && *(bool*)arglist[2]) : false);
 	return nullptr;
 }
 
 static void* __vararg_JS_Composite_ListBitmaps(void** arglist, int numparms)
 {
 	return (void*)(intptr_t)JS_Composite_ListBitmaps((HWND)arglist[0], (char*)arglist[1], (int)(intptr_t)arglist[2]);
+}
+
+static void* __vararg_JS_Composite_Delay(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_Composite_Delay((HWND)arglist[0], arglist[1] ? *(double*)arglist[1] : 0, arglist[2] ? *(double*)arglist[2] : 0, (int)(intptr_t)arglist[3],  (double*)arglist[4], (double*)arglist[5], (int*)arglist[6]);
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -181,7 +193,12 @@ static void* __vararg_JS_Window_FromPoint(void** arglist, int numparms)
 
 static void* __vararg_JS_Window_GetParent(void** arglist, int numparms)
 {
-  return (void*)(intptr_t)JS_Window_GetParent((void*)arglist[0]);
+  return (void*)JS_Window_GetParent((void*)arglist[0]);
+}
+
+static void* __vararg_JS_Window_SetParent(void** arglist, int numparms)
+{
+  return (void*)JS_Window_SetParent((void*)arglist[0], (void*)arglist[1]);
 }
 
 static void* __vararg_JS_Window_IsChild(void** arglist, int numparms)
@@ -220,6 +237,11 @@ static void* __vararg_JS_Window_SetForeground(void** arglist, int numparms)
 static void* __vararg_JS_Window_GetForeground(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_Window_GetForeground();
+}
+
+static void* __vararg_JS_Window_EnableMetal(void** arglist, int numparms)
+{
+  return(void*)(intptr_t)JS_Window_EnableMetal(arglist[0]);
 }
 
 static void* __vararg_JS_Window_Enable(void** arglist, int numparms)
@@ -404,6 +426,17 @@ static void* __vararg_JS_Window_AddressFromHandle(void** arglist, int numparms)
 	return NULL;
 }
 
+static void* __vararg_JS_ArrayFromAddress(void** arglist, int numparms)
+{
+	return (void*)JS_ArrayFromAddress(arglist[0] ? *(double*)arglist[0] : 0.0);
+}
+
+static void* __vararg_JS_AddressFromArray(void** arglist, int numparms)
+{
+	JS_AddressFromArray((double*)arglist[0], (double*)arglist[1]);
+	return NULL;
+}
+
 static void* __vararg_JS_WindowMessage_Post(void** arglist, int numparms)
 {
   return (void*)(intptr_t)JS_WindowMessage_Post((void*)arglist[0], (const char*)arglist[1], arglist[2] ? *(double*)arglist[2] : 0.0, (int)(intptr_t)arglist[3], arglist[4] ? *(double*)arglist[4] : 0.0, (int)(intptr_t)arglist[5]);
@@ -534,8 +567,7 @@ static void* __vararg_JS_GDI_GetScreenDC(void** arglist, int numparms)
 
 static void* __vararg_JS_GDI_ReleaseDC(void** arglist, int numparms)
 {
-  JS_GDI_ReleaseDC((void*)arglist[0], (void*)arglist[1]);
-  return NULL;
+  return (void*)(intptr_t)JS_GDI_ReleaseDC((void*)arglist[0], (void*)arglist[1]);
 }
 
 /*
@@ -685,6 +717,15 @@ static void* __vararg_JS_LICE_CreateBitmap(void** arglist, int numparms)
 	return (void*)(intptr_t)JS_LICE_CreateBitmap((bool)arglist[0], (int)(intptr_t)arglist[1], (int)(intptr_t)arglist[2]);
 }
 
+static void* __vararg_JS_LICE_ListAllBitmaps(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_LICE_ListAllBitmaps((char*)arglist[0], (int)(intptr_t)arglist[1]);
+}
+static void* __vararg_JS_LICE_ArrayAllBitmaps(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_LICE_ArrayAllBitmaps((double*)arglist[0]);
+}
+
 static void* __vararg_JS_LICE_GetHeight(void** arglist, int numparms)
 {
 	return (void*)(intptr_t)JS_LICE_GetHeight((void*)arglist[0]);
@@ -716,10 +757,15 @@ static void* __vararg_JS_LICE_WritePNG(void** arglist, int numparms)
 	return (void*)(intptr_t)JS_LICE_WritePNG((const char*)arglist[0], (LICE_IBitmap*)arglist[1], (bool)arglist[2]);
 }
 
-/*static void* __vararg_JS_LICE_WriteJPG(void** arglist, int numparms)
+static void* __vararg_JS_LICE_LoadJPG(void** arglist, int numparms)
 {
-	return (void*)(intptr_t)JS_LICE_WriteJPG((const char*)arglist[0], (LICE_IBitmap*)arglist[1], (int)(intptr_t)arglist[2], (bool)arglist[2]);
-}*/
+	return (void*)(intptr_t)JS_LICE_LoadJPG((const char*)arglist[0]);
+}
+
+static void* __vararg_JS_LICE_WriteJPG(void** arglist, int numparms)
+{
+	return (void*)(intptr_t)JS_LICE_WriteJPG((const char*)arglist[0], (LICE_IBitmap*)arglist[1], (int)(intptr_t)arglist[2], (numparms>3 && arglist[3]) ? *(bool*)arglist[3] : false);
+}
 
 static void* __vararg_JS_LICE_Blit(void** arglist, int numparms)
 {

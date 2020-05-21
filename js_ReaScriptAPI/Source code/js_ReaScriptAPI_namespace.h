@@ -20,15 +20,15 @@ namespace Julian
 	// REAPER immediately converts this array into Lua strings, 
 	char longString[EXT_LEN];
 
-
 	///////////////////////////////////////////////////////////////////////////////////////////////
 	// GDI and LICE stuff
 	// Store all created HDCs and IBitmaps so that can check whether these exist, when 
 
 	// Bitmaps can use up lots of RAM, so to ensure that all bitmaps are destroyed when REAPER exits,
 	//		all active bitmaps are stored here, and will be destroyed by the REAPER_PLUGIN_ENTRYPOINT function.
-	map<LICE_IBitmap*, HDC> LICEBitmaps;
-	set<HDC> GDIHDCs;
+	LICE_IBitmap* 			compositeCanvas;
+	map<LICE_IBitmap*, HDC> mLICEBitmaps;
+	set<pair<HWND,HDC>> 	GDIHDCs;
 
 	// To avoid having to re-load a cursor from file every time that a script is executed,
 	//		the HCURSURS will be stored in this map.
@@ -52,7 +52,7 @@ namespace Julian
 	/////////////////////////////////////////////
 	// WINDOW CLASS
 	// Remember to initialize the hInstance!
-#ifdef _WIN32
+#ifdef _WIN32skipthis // can't get wchar to work with class names yet, so skip this and use plain char
 	std::map<std::string, wchar_t*> mapClassNames;
 #else
 	std::map<std::string, char*> mapClassNames;
@@ -66,16 +66,19 @@ namespace Julian
 	//////////////////////////////////////////////////////////////////////////////////////
 	// Find functions: Some global variables that will be used when searching for windows.
 	// Since these variables are global, all functions and their callbacks can access the variables without having to pass them via lParams.
-	set<HWND>	foundHWNDs;
-	char		findTitle[1024]; // Title text that must be matched
-	bool		findExact;  // Match exactly, or substring?
-	char		tempTitle[1024];   // Temprarily store window titles returned by GetWindowText
+	/*namespace find
+	{
+		set<HWND>	foundHWNDs;
+		char		findTitle[1024]; // Title text that must be matched
+		bool		findExact;  // Match exactly, or substring?
+		char		tempFindTitle[1024];   // Temprarily store window titles returned by GetWindowText
 
-	HWND		hwnd;  // HWND that was found (for single-window versions of functions)
+		HWND		foundHwnd;  // HWND that was found (for single-window versions of functions)
 
-	char*		hwndString; // List of all matching HWNDs (for List version of functions)
-	unsigned int	hwndLen;
-	double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
+		char*		hwndString; // List of all matching HWNDs (for List version of functions)
+		unsigned int	hwndLen;
+		double*		reaperarray; // Array of all matching HWNDs (for Array version of functions), in reaper.array format (i.e. with alloc size and used size in first entry)
+	}*/
 
 	// While windows are being enumerated, this struct stores the information
 	//		such as the title text that must be matched, as well as the list of all matching window HWNDs.
@@ -97,10 +100,12 @@ namespace Julian
 	constexpr int ERR_ALREADY_INTERCEPTED = 0;
 	constexpr int ERR_NOT_WINDOW = -1;
 	constexpr int ERR_PARSING = -2;
-	constexpr int ERR_ORIGPROC = -3;
+	constexpr int ERR_ORIG_WNDPROC = -3;
 	constexpr int ERR_NOT_BITMAP = -4;
 	constexpr int ERR_NOT_SYSBITMAP = -5;
 	constexpr int ERR_WINDOW_HDC = -6;
+	constexpr int ERR_NEW_WNDPROC = -7;
+	constexpr int ERR_INVALIDATE = -8;
 
 	// This struct is used to store the data of intercepted messages.
 	//		In addition to the standard wParam and lParam, a unique timestamp is added.
@@ -111,9 +116,28 @@ namespace Julian
 		WPARAM wParam;
 		LPARAM lParam;
 	};
+	/*
+	// When posting a message that is being intercepted, store its info in this set,
+	//		so that can be skipped.
+	struct sPostedMsg
+	{
+		HWND hwnd;
+		UINT uMsg;
+		WPARAM wParam;
+		LPARAM lParam;
+	};
+	bool operator==(const sPostedMsg& msg1, const sPostedMsg& msg2)
+	{
+		return ((msg1.wParam == msg2.wParam)
+			&& (msg1.lParam == msg2.lParam)
+			&& (msg1.uMsg == msg2.uMsg)
+			&& (msg1.hwnd == msg2.hwnd));
+	};
+	std::multiset<sPostedMsg> setPostedMessages;
+	*/
 
 	// This struct is used to store the data of linked bitmaps for compositing.
-	struct sBitmapData 
+	struct sBlitRects 
 	{
 		int dstx;
 		int dsty;
@@ -127,19 +151,29 @@ namespace Julian
 
 	// This struct and map store the data of each HWND that is being intercepted.
 	// (Each window can only be intercepted by one script at a time.)
-	// For each window, three bitfields summarize the up/down states of most of the keyboard. 
-	// UPDATE: Apparently, REAPER's windows don't receive keystrokes via the message queue, and the keyboard can therefore not be intercepted.  
 	struct sWindowData
 	{
-		WNDPROC origProc;
-		std::map<UINT, sMsgData> mapMessages;
-		std::map<LICE_IBitmap*, sBitmapData> mapBitmaps;
+		LONG_PTR origProc;
+		std::map<UINT, sMsgData> mapMessages; // Most recent msg values received
+		std::map<LICE_IBitmap*, sBlitRects> mapBitmaps; // bitmaps linked to this window for compositing
+		RECT 	 mustInvalidRect; // On WindowsOS, the rect that must be invalidated in callback;  on Linux and macOS the rect that has *already* been invalidated in this paint cycle.
+		RECT 	 doneInvalidRect;
+		double	 lastTime;
+		UINT_PTR timerID;
 	};
 	const bool BLOCK = false;
 
 	// THE MAIN MAP FOR ALL INTERCEPTS
 	// Each window that is being intercepted, will be mapped to its data struct.
 	std::map <HWND, sWindowData> mapWindowData;
+
+	struct sDelayData
+	{
+		double	minTime;
+		double	maxTime;
+		int		maxBitmaps;
+	};
+	std::map<HWND, sDelayData> mapDelayData;
 
 	// This map contains all the WM_ messages in swell-types.h. These can be assumed to be valid cross-platform.
 	std::map<std::string, UINT> mapWM_toMsg

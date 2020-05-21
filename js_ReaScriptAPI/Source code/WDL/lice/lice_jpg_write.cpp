@@ -30,7 +30,7 @@ static void LICEJPEG_reset_error_mgr(j_common_ptr cinfo)
   cinfo->err->msg_code = 0;
 }
 
-bool JS_LICE_WriteJPG(const char *filename, LICE_IBitmap *bmp, int quality, bool force_baseline)
+bool LICE_WriteJPG(const char *filename, LICE_IBitmap *bmp, int quality, bool force_baseline)
 {
   if (!bmp || !filename) return false;
 

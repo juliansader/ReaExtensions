@@ -1,5 +1,29 @@
+/*
+#ifndef SWELL_TARGET_OSX
+#define SWELL_TARGET_OSX 1
+#endif
+
+#ifndef __OBJC__
+#define __OBJC__ 1
+#endif
+
+#ifdef SWELL_NO_METAL
+#error "SWELL_NO_METAL should NOT be defined for the entire project"
+#endif
+*/
+
 #import <Cocoa/Cocoa.h>
 #import <objc/objc-runtime.h>
+	
+void* JS_GetContentViewFromSwellHWND(void* hwnd)
+{
+	if (hwnd && [(id)hwnd isKindOfClass:[NSView class]])
+		return [[(NSView*)hwnd window] contentView];
+	else if (hwnd && [(id)hwnd isKindOfClass:[NSWindow class]])
+		return [[(NSWindow*)hwnd window] contentView];	
+	else
+		return NULL;
+}
 
 // The NSWindow is the container of the NSView child windows.
 void* JS_GetNSWindowFromSwellHWND(void* hwnd)
@@ -104,3 +128,13 @@ bool JS_Window_SetZOrder_ObjC(void* hwnd, void* insertAfterHWND)
 	}
    	return false;
 }
+
+/*
+int JS_GetMetalMode(void* hwnd)
+{
+	if (!hwnd) return -10;
+	if (![(id)hwnd isKindOfClass:[SWELL_hwndChild class]]) return -11;
+	SWELL_hwndChild *ch = (SWELL_hwndChild *)hwnd;
+  	return ch->m_use_metal;
+}
+*/

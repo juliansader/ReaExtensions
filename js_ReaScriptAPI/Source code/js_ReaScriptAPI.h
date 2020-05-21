@@ -6,6 +6,8 @@ void  JS_ReaScriptAPI_Version(double* versionOut);
 
 void  JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz);
 
+int   JS_Zip_Add(char* zipFile, char* inputFiles);
+
 void* JS_Mem_Alloc(int sizeBytes);
 bool  JS_Mem_Free(void* mallocPointer);
 bool  JS_Mem_FromString(void* mallocPointer, int offset, const char* packedString, int stringLength);
@@ -13,6 +15,8 @@ bool  JS_String(void* pointer, int offset, int lengthChars, char* bufOutNeedBig,
 void  JS_Int(void* pointer, int offset, int* intOut);
 void  JS_Byte(void* pointer, int offset, int* byteOut);
 void  JS_Double(void* pointer, int offset, double* doubleOut);
+double* JS_ArrayFromAddress(double address);
+void  JS_AddressFromArray(double* array, double* addressOut);
 
 void* JS_Window_Create(const char* title, const char* className, int x, int y, int w, int h, char* styleOptional, void* ownerHWNDOptional);
 int   JS_Dialog_BrowseForSaveFile(const char* windowTitle, const char* initialFolder, const char* initialFile, const char* extensionList, char* fileNameOutNeedBig, int fileNameOutNeedBig_sz);
@@ -32,6 +36,7 @@ bool  JS_Window_InvalidateRect(HWND windowHWND, int left, int top, int right, in
 void* JS_Window_FromPoint(int x, int y);
 
 void* JS_Window_GetParent(void* windowHWND);
+void* JS_Window_SetParent(void* childHWND, void* parentHWND);
 void* JS_Window_GetRoot(void* windowHWND);
 bool  JS_Window_IsChild(void* parentHWND, void* childHWND);
 void* JS_Window_GetRelated(void* windowHWND, const char* relation);
@@ -63,8 +68,10 @@ void  JS_Window_SetLong(void* windowHWND, const char* info, double value, double
 bool  JS_Window_SetStyle(void* windowHWND, char* style);
 bool  JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value);
 #ifdef __APPLE__
+void* JS_GetContentViewFromSwellHWND(void* hwnd);
 void* JS_GetNSWindowFromSwellHWND(void* hwnd);
 bool  JS_Window_SetOpacity_ObjC(void* hwnd, double alpha);
+//int   JS_GetMetalMode(void* hwnd);
 #endif
 
 void  JS_Window_SetFocus(void* windowHWND);
@@ -72,6 +79,7 @@ void* JS_Window_GetFocus();
 void  JS_Window_SetForeground(void* windowHWND);
 void* JS_Window_GetForeground();
 
+int   JS_Window_EnableMetal(void* windowHWND);
 void  JS_Window_Enable(void* windowHWND, bool enable);
 void  JS_Window_Destroy(void* windowHWND);
 void  JS_Window_Show(void* windowHWND, const char* state);
@@ -102,7 +110,7 @@ bool  JS_WindowMessage_Peek(void* windowHWND, const char* message, bool* passedT
 int   JS_WindowMessage_Release(void* windowHWND, const char* messages);
 void  JS_WindowMessage_ReleaseWindow(void* windowHWND);
 void  JS_WindowMessage_ReleaseAll();
-static void JS_WindowMessage_RestoreOrigProc(HWND hwnd);
+void  JS_WindowMessage_RestoreOrigProcAndErase();
 bool  JS_Window_OnCommand(void* windowHWND, int commandID);
 
 int   JS_Mouse_GetState(int flags);
@@ -119,7 +127,7 @@ bool  JS_Window_SetScrollPos(void* windowHWND, const char* scrollbar, int positi
 void* JS_GDI_GetClientDC(void* windowHWND);
 void* JS_GDI_GetWindowDC(void* windowHWND);
 void* JS_GDI_GetScreenDC();
-void  JS_GDI_ReleaseDC(void* windowHWND, void* deviceHDC);
+int   JS_GDI_ReleaseDC(void* deviceHDC, void* windowHWNDOptional);
 
 void* JS_GDI_CreateFillBrush(int color);
 void* JS_GDI_CreatePen(int width, int color);
@@ -146,11 +154,14 @@ void  JS_GDI_Polyline(void* deviceHDC, const char* packedX, const char* packedY,
 void  JS_GDI_Blit(void* destHDC, int dstx, int dsty, void* sourceHDC, int srcx, int srcy, int width, int height, const char* modeOptional);
 void  JS_GDI_StretchBlit(void* destHDC, int dstx, int dsty, int dstw, int dsth, void* sourceHDC, int srcx, int srcy, int srcw, int srch, const char* modeOptional);
 
-int   JS_Composite(HWND hwnd, int dstx, int dsty, int dstw, int dsth, LICE_IBitmap* sysBitmap, int srcx, int srcy, int srcw, int srch);
-void  JS_Composite_Unlink(HWND hwnd, LICE_IBitmap* bitmap);
+int   JS_Composite(HWND hwnd, int dstx, int dsty, int dstw, int dsth, LICE_IBitmap* sysBitmap, int srcx, int srcy, int srcw, int srch, bool autoUpdate);
+void  JS_Composite_Unlink(HWND hwnd, LICE_IBitmap* bitmap, bool autoUpdate);
 int   JS_Composite_ListBitmaps(HWND hwnd, char* listOutNeedBig, int listOutNeedBig_sz);
+int   JS_Composite_Delay(HWND hwnd, double minTime, double maxTime, int maxBitmaps,  double* prevMinTimeOut, double* prevMaxTimeOut, int* prevBitmapsOut);
 
 void* JS_LICE_CreateBitmap(bool isSysBitmap, int width, int height);
+int   JS_LICE_ListAllBitmaps(char* listOutNeedBig, int listOutNeedBig_sz);
+int   JS_LICE_ArrayAllBitmaps(double* reaperarray);
 int	  JS_LICE_GetHeight(void* bitmap);
 int   JS_LICE_GetWidth(void* bitmap);
 void* JS_LICE_GetDC(void* bitmap);
@@ -165,7 +176,9 @@ bool  JS_LICE_Blit_AlphaMultiply(LICE_IBitmap* destBitmap, int dstx, int dsty, L
 void* JS_LICE_LoadPNG(const char* filename);
 bool  JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha);
 //bool  LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha); // lice.h excludes these functions if LICE_PROVIDED_BY_APP, so must declare this function myself.
-//bool  JS_LICE_WriteJPG(const char *filename, LICE_IBitmap *bmp, int quality, bool force_baseline);
+bool  JS_LICE_WriteJPG(const char* filename, LICE_IBitmap* bitmap, int quality, bool forceBaseline);
+void* JS_LICE_LoadJPG(const char* filename);
+
 bool  JS_LICE_IsFlipped(void* bitmap);
 bool  JS_LICE_Resize(void* bitmap, int width, int height);
 void  JS_LICE_Clear(void* bitmap, int color);
@@ -226,3 +239,14 @@ int Xen_GetMediaSourceSamples(PCM_source* src, double* destbuf, int destbufoffse
 int Xen_StartSourcePreview(PCM_source* src, double gain, bool loop, int startOutputChannel);
 int Xen_StopSourcePreview(int id);
 void Xen_DestroyPreviewSystem();
+
+#define UNION_RECT(X, Y) X = {	X.left	 < Y.left	? X.left	: Y.left, \
+								X.top	 < Y.top	? X.top		: Y.top, \
+								X.right  > Y.right	? X.right	: Y.right, \
+								X.bottom > Y.bottom	? X.bottom	: Y.bottom };
+
+#define RECTS_OVERLAP(X, Y) (X.left < Y.right && X.right > Y.left && X.top < Y.bottom && X.bottom > Y.top)
+#define RECT_IS_EMPTY(X) (X.left == X.right || X.top == X.bottom)
+#define CONTRACT_TO_CLIENTRECT(X, C) if (X.left >= C.right || X.right <= 0 || X.top >= C.bottom || X.bottom <= C.top) X = { 0, 0, 0, 0};  \
+									 else { if (X.left < 0) X.left = 0; if (X.top < 0) X.top = 0; if (X.right > C.right) X.right = C.right; if (X.bottom > C.bottom) X.bottom = C.bottom; }
+#define RECTS_OVERLAP_WH(X, Y) (X.left < Y.right && X.top < Y.bottom && X.top+X.bottom > Y.top && X.left+X.right > Y.left)

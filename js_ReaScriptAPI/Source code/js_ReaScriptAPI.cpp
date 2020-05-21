@@ -1,6 +1,16 @@
-#include "stdafx.h"
+#include "stdafx.h" // This will in turn #include all the other header files
 
 using namespace std;
+
+#define JS_REASCRIPTAPI_VERSION 1.215
+
+#ifndef _WIN32
+#define _WDL_SWELL 1 // So that I don't have to type #ifdef __linux__ and __APPLE__ everywhere
+#define IsWindow(X) ValidatePtr(X, "HWND")
+#define jsAlphaBlend(A, B, C, D, E, F, G, H, I, J) StretchBlt(A, B, C, D, E, F, G, H, I, J, SRCCOPY_USEALPHACHAN)
+#else
+#define jsAlphaBlend(A, B, C, D, E, F, G, H, I, J) AlphaBlend(A, B, C, D, E, F, G, H, I, J, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA })
+#endif
 
 // This function is called when REAPER loads or unloads the extension.
 // If rec != nil, the extension is being loaded.  If rec == nil, the extension is being UNloaded.
@@ -45,6 +55,13 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			MessageBox(NULL, "This extension requires REAPER v5.974 or higher.", "ERROR: js_ReaScriptAPI extension", 0);
 			return 0;
 		}
+		
+		Julian::compositeCanvas = LICE_CreateBitmap(true, 2000, 2000);
+		if (!Julian::compositeCanvas)
+		{
+			MessageBox(NULL, "Could not create a LICE bitmap for compositing.", "ERROR: js_ReaScriptAPI extension", 0);
+			return 0;
+		}
 
 		// Don't know what this does, but apparently it's necessary for the localization functions.
 		IMPORT_LOCALIZE_RPLUG(rec);
@@ -81,6 +98,9 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 		// UNDOCUMENTED FEATURE! "<accelerator" instead of "accelerator" places function in front of keyboard processing queue
 		plugin_register("<accelerator", &(Julian::sAccelerator));
+		
+		// List js_ReaScriptAPI in REAPER main toolbar menu
+		//plugin_register("hookcustommenu", menuHook);
 
 		// On WindowsOS, register new class for Window_Create
 		/*
@@ -93,26 +113,31 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 
 		return 1; // success
 	}
+
+	// rec == nil
 	// Does an extension need to do anything when unloading?  
 	// To prevent memory leaks, perhaps try to delete any stuff that may remain in memory?
 	// On Windows, LICE bitmaps are automatically destroyed when REAPER quits, but to make extra sure, this function will destroy them explicitly.
-	// Why store stuff in extra sets?  For some unexplained reason REAPER crashes if I try to destroy LICE bitmaps explicitly. And for another unexplained reason, this roundabout way works...
 	else 
 	{
-		std::set<HWND> windowsToRestore;
-		for (auto& i : Julian::mapWindowData)
-			windowsToRestore.insert(i.first);
-		for (HWND hwnd : windowsToRestore)
-			JS_WindowMessage_RestoreOrigProc(hwnd);
-
-		//for (auto& bm : Julian::LICEBitmaps)
-		//	LICE__Destroy(bm.first);
-		
-		std::set<LICE_IBitmap*> bitmapsToDelete;
-		for (auto& i : Julian::LICEBitmaps)
-			bitmapsToDelete.insert(i.first);
-		for (LICE_IBitmap* bm : bitmapsToDelete)
-			JS_LICE_DestroyBitmap(bm);
+		// WARNING!!!  Iterator may crash if map entries is deleted while iterating,
+		// which JS_WindowMessage_RestoreOrigProcAndErase indeed does.
+		// So leave JS_WindowMessage_RestoreOrigProcAndErase out of loop.
+		for (auto& i : Julian::mapWindowData) {
+			i.second.mapBitmaps.clear();
+			i.second.mapMessages.clear();
+		}
+		JS_WindowMessage_RestoreOrigProcAndErase();
+			
+		// Strangely, REAPER seems to execute script atexits AFTER running this REAPER_PLUGIN_ENTRYPOINT with rec = 0.
+		// So if the extension destroys all bitmaps but doesn't clear mLICEBitmaps, and a script also tries to destroy
+		//		a bitmap, the JS_LICE_DestroyBitmap may think that the bitmap still exists, and then crash when
+		//		attempting to destroy a non-existing bitmap.  
+		// So mLICEBitmaps and all other resource containers must be cleared if scripts depend on them to be accurate.
+		//std::set<LICE_I
+		for (auto& i : Julian::mLICEBitmaps)
+			LICE__Destroy(i.first);
+		Julian::mLICEBitmaps.clear();
 		for (auto& i : Julian::mapClassNames)
 			free(i.second);
 		for (auto& i : Julian::mapMallocToSize)
@@ -121,7 +146,9 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 			free(i.defstring);
 		for (HGDIOBJ i : Julian::setGDIObjects)
 			DeleteObject(i);
+		Julian::setGDIObjects.clear();
 
+		LICE__Destroy(Julian::compositeCanvas);
 
 		plugin_register("-accelerator", &(Julian::sAccelerator));
 		return 0;
@@ -189,13 +216,80 @@ v0.991
  * New: JS_Window_SetStyle: Can add or remove frames from gfx and other windows.
 v0.992
  * Support Unicode characters for Dialog functions, Get/SetTitle/ClassName, and GDI_DrawText.
- * VKeys functions ignore repeated KEYDOWNs.
+ * VKeys functions ignore auto-repeated KEYDOWN messages.
+v0.993
+ * VKeys functions: improved handling of auto-repeated KEYDOWN messages.
+v0.995
+ * Fixed: Script-created windows crashing when subclassing.
+v0.996
+ * JS_Window_SetParent
+v0.997
+ * WindowMessage_Post and _Send work similarly when message type is being intercepted.
+v0.998
+ * Proper linking against GDK on Linux.
+v0.999
+ * JS_Window functions: On Linux and macOS, don't crash if handle is invalid.
+ * LoadPNG, SavePNG, LoadCursorFromFile: On Windows, accept Unicode paths.
+ * ReleaseDC: Can release screen HDCs.
+v1.000f
+ * Composite, Composite_Unlink and DestroyBitmap automatically updates window.
+ * Composite_Unlink can optionally unlink all bitmaps from window.
+ * JS_LICE_List/ArrayAllBitmaps
+ * JS_Window_EnableMetal.
+v1.001
+ * Safely delete resources if REAPER quits while script is running.
+v1.002
+ * Linux and macOS: JS_Window_GetForeground returns top-level window.
+ * WindowsOS: New JS_Composite_Delay function to reduce flickering.
+ * JS_Composite: Auto-update now optional.
+ * JS_Composite: Fixed incorrect InvalidateRect calculation. 
+v1.010
+ * Streamline Compositing functions, particularly when window is only partially invalidated.
+ * Fix bug in JS_WindowMessage_RestoreOrigProcAndErase.
+v1.210
+ * macOS: JS_Window_EnableMetal returns correct modes.
+ * macOS: Compositing still doesn't work if Metal graphics is enabled.
+v1.215
+ * Fixed: LICE_WritePNG when image has transparency.
+ * New: LICE_LoadJPG, LICE_WriteJPG.
+ * Updated: If Metal graphics, JS_Composite clips to client area.
 */
 
 
+
+int JS_Zip_Add(char* zipFile, char* inputFiles, int inputFiles_sz)
+{/*
+	using namespace zipper;
+	
+	Zipper zipper(zipFile);
+	if (!zipper) return 0;
+	
+	while (inputFiles && *inputFiles)
+	{
+		#ifdef _WIN32 // convert to WideChar for Unicode support
+		int wideCharLength = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, inputFiles, -1, NULL, 0);
+		if (!wideCharLength) return -2
+		WCHAR* widePath = (WCHAR*) alloca(wideCharLength * sizeof(WCHAR) * 2);
+		if (!widePath) return -2
+		MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, inputFiles, -1, widePath, wideCharLength * 2);
+		std::ifstream file{widePath};
+		#else
+		std::ifstream file{inputFiles};
+		#endif
+		if (!file) return -1;
+		zipper.add(input1, inputFiles);
+		inputFiles = strchr(inputFiles, 0)
+		if (inputFiles) inputFiles += 1;
+	}
+
+	zipper.close();
+	*/
+	return 1;
+}
+
 void JS_ReaScriptAPI_Version(double* versionOut)
 {
-	*versionOut = 0.992;
+	*versionOut = JS_REASCRIPTAPI_VERSION;
 }
 
 void JS_Localize(const char* USEnglish, const char* LangPackSection, char* translationOut, int translationOut_sz)
@@ -220,7 +314,8 @@ void JS_Localize(const char* USEnglish, const char* LangPackSection, char* trans
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Virtual keys / Keyboard functions
-static double VK_KeyDown[256]{ 0 }; // time stamp of latest WM_KEYDOWN message
+static double VK_KeyDown[256]{ 0 }; // time stamp of latest WM_KEYDOWN message -- INcluding all auto-repeated KEYDOWNs
+static double VK_KeyDownEx[256]{ 0 }; // time stamp of latest WM_KEYDOWN message -- EXcluding auto-repeated KEYDOWNs
 static double VK_KeyUp[256]{ 0 }; // time stamp of latest WM_KEYUP message
 static unsigned char VK_Intercepts[256]{ 0 }; // Should the VK be intercepted?
 static constexpr size_t VK_Size = 255; // sizeof(VK_Intercepts);
@@ -237,15 +332,10 @@ int JS_VKeys_Callback(MSG* event, accelerator_register_t*)
 		case WM_SYSKEYDOWN:
 			if (keycode < 256)
 			{
-				if (VK_KeyUp[keycode] > VK_KeyDown[keycode]) // Ignore repeated keys. Assume keyboard repeat delay is always less than 3s.
-				{
-					VK_KeyDown[keycode] = time_precise();
-				}
-				else
-				{
-					time = time_precise();
-					if (time > VK_KeyDown[keycode] + 3) VK_KeyDown[keycode] = time;
-				}
+				time = time_precise();
+				if ((time > VK_KeyDown[keycode] + 4) || (VK_KeyUp[keycode] >= VK_KeyDown[keycode])) // Ignore repeated keys. Assume keyboard repeat delay is always less than 4s.
+					VK_KeyDownEx[keycode] = time;
+				VK_KeyDown[keycode] = time;
 			}
 			break;
 		case WM_KEYUP:
@@ -269,7 +359,7 @@ void JS_VKeys_GetState(double cutoffTime, char* stateOutNeedBig, int stateOutNee
 				cutoffTime = time_precise() + cutoffTime;
 			for (unsigned int i = 1; i <= VK_Size; i++)
 			{
-				if (VK_KeyDown[i] > VK_KeyUp[i] && VK_KeyDown[i] > cutoffTime)
+				if (VK_KeyDownEx[i] > VK_KeyUp[i] && VK_KeyDownEx[i] > cutoffTime)
 					stateOutNeedBig[i-1] = 1;
 				else
 					stateOutNeedBig[i-1] = 0;
@@ -286,7 +376,7 @@ void JS_VKeys_GetDown(double cutoffTime, char* stateOutNeedBig, int stateOutNeed
 				cutoffTime = time_precise() + cutoffTime;
 			for (unsigned int i = 1; i <= VK_Size; i++)
 			{
-				if (VK_KeyDown[i] > cutoffTime)
+				if (VK_KeyDownEx[i] > cutoffTime)
 					stateOutNeedBig[i-1] = 1;
 				else
 					stateOutNeedBig[i-1] = 0;
@@ -678,6 +768,9 @@ int JS_Dialog_BrowseForFolder(const char* caption, const char* initialFolder, ch
 
 bool JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
 {
+	#ifdef _WDL_SWELL
+	if(!ValidatePtr(windowHWND, "HWND")) return false;
+	#endif
 	RECT r{ 0, 0, 0, 0 };
 	bool isOK = !!GetWindowRect((HWND)windowHWND, &r);
 #ifdef __APPLE__
@@ -700,8 +793,11 @@ bool JS_Window_GetRect(void* windowHWND, int* leftOut, int* topOut, int* rightOu
 
 void JS_Window_ScreenToClient(void* windowHWND, int x, int y, int* xOut, int* yOut)
 {
-	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
+	#ifdef _WDL_SWELL
+	if(ValidatePtr(windowHWND, "HWND"))
+	#endif
+	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	ScreenToClient((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
@@ -711,6 +807,9 @@ void JS_Window_ClientToScreen(void* windowHWND, int x, int y, int* xOut, int* yO
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	POINT p{ x, y };
+	#ifdef _WDL_SWELL
+	if(ValidatePtr(windowHWND, "HWND"))
+	#endif
 	ClientToScreen((HWND)windowHWND, &p);
 	*xOut = (int)p.x;
 	*yOut = (int)p.y;
@@ -721,17 +820,17 @@ bool JS_Window_GetClientRect(void* windowHWND, int* leftOut, int* topOut, int* r
 {
 	// Unlike Win32, Cockos WDL doesn't return a bool to confirm success.
 	// However, if hwnd is not a true hwnd, SWELL will return a {0,0,0,0} rect.
-	HWND hwnd = (HWND)windowHWND;
 	RECT r{ 0, 0, 0, 0 };
 #ifdef _WIN32
-	bool isOK = !!GetClientRect(hwnd, &r);
+	bool isOK = !!GetClientRect((HWND)windowHWND, &r);
 #else
-	GetClientRect(hwnd, &r);
+	if(ValidatePtr(windowHWND, "HWND")) 
+		GetClientRect((HWND)windowHWND, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
 	if (isOK) {
 		POINT p{ 0, 0 };
-		ClientToScreen(hwnd, &p);
+		ClientToScreen((HWND)windowHWND, &p);
 		*leftOut = (int)p.x;
 		*topOut = (int)p.y;
 		*rightOut = (int)p.x + (int)r.right;
@@ -752,7 +851,8 @@ bool JS_Window_GetClientSize(void* windowHWND, int* widthOut, int* heightOut)
 #ifdef _WIN32
 	bool isOK = !!GetClientRect((HWND)windowHWND, &r);
 #else
-	GetClientRect((HWND)windowHWND, &r);
+	if(ValidatePtr(windowHWND, "HWND")) 
+		GetClientRect((HWND)windowHWND, &r);
 	bool isOK = (r.bottom != 0 || r.right != 0);
 #endif
 	r.right = (r.right >= 0) ? (r.right) : (-(r.right));
@@ -830,16 +930,33 @@ void* JS_Window_FromPoint(int x, int y)
 
 void* JS_Window_GetParent(void* windowHWND)
 {
+	#ifdef _WDL_SWELL
+	if(!ValidatePtr(windowHWND, "HWND")) return nullptr;
+	#endif
 	return GetParent((HWND)windowHWND);
+}
+	
+void* JS_Window_SetParent(void* childHWND, void* parentHWND)
+{
+	#ifdef _WDL_SWELL
+	if(!(ValidatePtr(childHWND, "HWND") && ValidatePtr(parentHWND, "HWND"))) return nullptr;
+	#endif
+	return SetParent((HWND)childHWND, (HWND)parentHWND);
 }
 
 bool  JS_Window_IsChild(void* parentHWND, void* childHWND)
 {
+	#ifdef _WDL_SWELL
+	if(!(ValidatePtr(childHWND, "HWND") && ValidatePtr(parentHWND, "HWND"))) return false;
+	#endif
 	return !!IsChild((HWND)parentHWND, (HWND)childHWND);
 }
 
 void* JS_Window_GetRelated(void* windowHWND, const char* relation)
 {
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return nullptr;
+	#endif
 	/*
 	#define GW_HWNDFIRST        0
 	#define GW_HWNDLAST         1
@@ -863,12 +980,18 @@ void* JS_Window_GetRelated(void* windowHWND, const char* relation)
 
 void  JS_Window_SetFocus(void* windowHWND)
 {
+	#ifdef _WDL_SWELL
+	if (ValidatePtr(windowHWND, "HWND"))
+	#endif
 	// SWELL returns different types than Win32, so this function won't return anything.
 	SetFocus((HWND)windowHWND);
 }
 
 void  JS_Window_SetForeground(void* windowHWND)
 {
+	#ifdef _WDL_SWELL
+	if(ValidatePtr(windowHWND, "HWND"))
+	#endif
 	// SWELL returns different types than Win32, so this function won't return anything.
 	SetForegroundWindow((HWND)windowHWND);
 }
@@ -878,28 +1001,55 @@ void* JS_Window_GetFocus()
 	return GetFocus();
 }
 
+// WDL/swell often simply returns the focused window, instead of the toplevel foreground window.
+// Some this extension adapted the WDL/swell function.
 void* JS_Window_GetForeground()
 {
+#ifdef _WIN32
 	return GetForegroundWindow();
+#elif __linux__
+	// Definitions of swell's HWND, HWND__ struct, m_oswindow etc can be found in swell-internal.h
+	HWND w = GetForegroundWindow();
+	while (w && (w->m_parent))
+		w = w->m_parent;
+	return w;
+#else
+	return JS_GetContentViewFromSwellHWND(GetForegroundWindow());
+#endif
 }
 
-
-
+	
+int JS_Window_EnableMetal(void* windowHWND)
+{
+#ifdef __APPLE__
+	if (ValidatePtr(windowHWND, "HWND"))
+		return SWELL_EnableMetal((HWND)windowHWND, 0);
+	else
+		return 0;
+#else
+	return 0;
+#endif
+}
+	
 void  JS_Window_Enable(void* windowHWND, bool enable)
 {
+	#ifdef _WDL_SWELL
 	if (ValidatePtr(windowHWND, "HWND"))
-		EnableWindow((HWND)windowHWND, (BOOL)enable); // (enable ? (int)1 : (int)0));
+	#endif
+	EnableWindow((HWND)windowHWND, (BOOL)enable); // (enable ? (int)1 : (int)0));
 }
 
 void  JS_Window_Destroy(void* windowHWND)
 {
-	if (ValidatePtr(windowHWND, "HWND"))
-		DestroyWindow((HWND)windowHWND);
+	#ifdef _WDL_SWELL
+	if(ValidatePtr(windowHWND, "HWND"))
+	#endif
+	DestroyWindow((HWND)windowHWND);
 }
 
 void  JS_Window_Show(void* windowHWND, const char* state)
 {
-	/*
+	/* from swell-types.h:
 	#define SW_HIDE 0
 	#define SW_SHOWNA 1        // 8 on win32
 	#define SW_SHOW 2          // 1 on win32
@@ -932,6 +1082,9 @@ void  JS_Window_Show(void* windowHWND, const char* state)
 
 bool JS_Window_IsVisible(void* windowHWND)
 {
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return false;
+	#endif
 	return !!IsWindowVisible((HWND)windowHWND);
 }
 
@@ -939,6 +1092,9 @@ bool JS_Window_IsVisible(void* windowHWND)
 
 void* JS_Window_SetCapture(void* windowHWND)
 {
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return nullptr;
+	#endif
 	return SetCapture((HWND)windowHWND);
 }
 
@@ -955,6 +1111,10 @@ void  JS_Window_ReleaseCapture()
 
 void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 {
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return nullptr;
+	#endif
+	
 	int intMode;
 
 #ifdef _WIN32
@@ -984,6 +1144,10 @@ void* JS_Window_GetLongPtr(void* windowHWND, const char* info)
 
 void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
 {
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) *retvalOut = 0;
+	#endif
+	
 	int intMode;
 
 #ifdef _WIN32
@@ -1013,6 +1177,10 @@ void JS_Window_GetLong(void* windowHWND, const char* info, double* retvalOut)
 
 void JS_Window_SetLong(void* windowHWND, const char* info, double value, double* retvalOut)
 {
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) *retvalOut = 0;
+	#endif
+	
 	int intMode;
 
 #ifdef _WIN32
@@ -1042,6 +1210,9 @@ void JS_Window_SetLong(void* windowHWND, const char* info, double value, double*
 
 HWND JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, const char* title)
 {
+	#ifdef _WDL_SWELL
+	if (!(ValidatePtr(parentHWND, "HWND") && ValidatePtr(childHWND, "HWND"))) return nullptr;
+	#endif
 	// REAPER API cannot pass null pointers, so must do another way:
 	HWND		c = ((parentHWND == childHWND) ? nullptr : childHWND);
 	const char* t = ((strlen(title) == 0) ? nullptr : title);
@@ -1049,9 +1220,12 @@ HWND JS_Window_FindEx(HWND parentHWND, HWND childHWND, const char* className, co
 }
 
 
-HWND JS_Window_FindChildByID(HWND parent, int ID)
+HWND JS_Window_FindChildByID(HWND parentHWND, int ID)
 {
-	return GetDlgItem(parent, ID);
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(parentHWND, "HWND")) return nullptr;
+	#endif
+	return GetDlgItem(parentHWND, ID);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1260,6 +1434,10 @@ BOOL CALLBACK JS_Window_FindChild_Callback(HWND hwnd, LPARAM structPtr)
 //		* Optionally matches substrings.
 void* JS_Window_FindChild(void* parentHWND, const char* title, bool exact)
 {
+	#ifdef _WDL_SWELL
+	if(!(ValidatePtr(parentHWND, "HWND"))) return nullptr;
+	#endif
+	
 	using namespace Julian;
 
 	// FindWindow is case-insensitive, so this implementation is too. 
@@ -1402,7 +1580,10 @@ BOOL CALLBACK JS_Window_ListAllChild_Callback(HWND hwnd, LPARAM lParam)
 
 int JS_Window_ListAllChild(void* parentHWND, char* listOutNeedBig, int listOutNeedBig_sz)
 {
-	// Enumerate through all child windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	#ifdef _WDL_SWELL
+	if(!(ValidatePtr(parentHWND, "HWND"))) return 0;
+	#endif
+	// Enumerate through all child windows and store their HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
 	std::set<HWND> foundHWNDs;
 	EnumChildWindows((HWND)parentHWND, JS_Window_ListAllChild_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
 
@@ -1411,6 +1592,9 @@ int JS_Window_ListAllChild(void* parentHWND, char* listOutNeedBig, int listOutNe
 
 int JS_Window_ArrayAllChild(void* parentHWND, double* reaperarray)
 {
+	#ifdef _WDL_SWELL
+	if (!(ValidatePtr(parentHWND, "HWND"))) return 0;
+	#endif
 	// Enumerate through all child windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
 	std::set<HWND> foundHWNDs;
 	EnumChildWindows((HWND)parentHWND, JS_Window_ListAllChild_Callback, reinterpret_cast<LPARAM>(&foundHWNDs));
@@ -1518,12 +1702,12 @@ BEWARE, THESE NUMBERS ARE DIFFERENT FROM WIN32!!!
 // swell uses CreateDialog instead of CreateWindow to create new windows, and the callback returns INT_PTR instead of LRESULT
 #ifdef _WIN32
 typedef LRESULT callbacktype;
-#define myDefProc DefWindowProcW
+#define myDefProc DefWindowProc
 #else
 typedef INT_PTR callbacktype;
 #define myDefProc DefWindowProc
 #endif
-
+ 
 callbacktype CALLBACK JS_Window_Create_WinProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -1538,16 +1722,17 @@ callbacktype CALLBACK JS_Window_Create_WinProc(HWND hwnd, UINT msg, WPARAM wPara
 		//	PostQuitMessage(0);
 		//	return FALSE;
 	default:
-		return (callbacktype)myDefProc(hwnd, msg, wParam, lParam);
+		return (callbacktype)DefWindowProc(hwnd, msg, wParam, lParam);
 	}
 }
 
-#ifndef _WIN32
+#ifdef _WDL_SWELL
 #define WS_SIZEBOX WS_THICKFRAME
 #define WS_OVERLAPPEDWINDOW (WS_SIZEBOX|WS_SYSMENU|WS_CAPTION)
 #define WS_OVERLAPPED WS_CAPTION
 #define WS_MAXIMIZEBOX (WS_CAPTION|WS_SIZEBOX)
 #define WS_MINIMIZEBOX WS_CAPTION
+#undef WS_BORDER
 #define WS_BORDER WS_CAPTION
 #define WS_DLGFRAME WS_CAPTION
 #define WS_CLIPCHILDREN 0
@@ -1603,76 +1788,57 @@ void* JS_Window_Create(const char* title, const char* className, int x, int y, i
 
 		// On Windows, each new class name requires a new class.
 #ifdef _WIN32
-		// Does the class already exist?
+		// Does the class already exist?  If not, create it and save class name.
 		std::string classString = className;
 		if (!mapClassNames.count(classString))
 		{
-			int s = MultiByteToWideChar(CP_UTF8, 0, className, -1, NULL, 0);
-			if (s)
+			WNDCLASSEX structWindowClass
 			{
-				wchar_t* classW = (wchar_t*)malloc(2 * s * sizeof(wchar_t) + 10);
-				if (classW)
-				{
-					MultiByteToWideChar(CP_UTF8, 0, className, -1, classW, 2 * s);
+				sizeof(WNDCLASSEX),		//UINT cbSize;
+				CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, //UINT style;
+				JS_Window_Create_WinProc, //WNDPROC     lpfnWndProc;
+				0,			//int         cbClsExtra;
+				0,			//int         cbWndExtra;
+				ReaScriptAPI_Instance,		//HINSTANCE   hInstance;
+				NULL,		//HICON       hIcon;
+				NULL,		//HCURSOR     hCursor;
+				NULL,		//HBRUSH      hbrBackground;
+				NULL,		//LPCSTR      lpszMenuName;
+				className,	//LPCSTR      lpszClassName;
+				NULL,		//HICON       hIconSm;
+			};
 
-					WNDCLASSEXW structWindowClass
-					{
-						sizeof(WNDCLASSEX),		//UINT cbSize;
-						CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, //UINT style;
-						JS_Window_Create_WinProc, //WNDPROC     lpfnWndProc;
-						0,			//int         cbClsExtra;
-						0,			//int         cbWndExtra;
-						ReaScriptAPI_Instance,		//HINSTANCE   hInstance;
-						NULL,		//HICON       hIcon;
-						NULL,		//HCURSOR     hCursor;
-						NULL,		//HBRUSH      hbrBackground;
-						NULL,		//LPCWSTR      lpszMenuName;
-						classW,		//LPCWSTR      lpszClassName;
-						NULL,		//HICON       hIconSm;
-					};
-
-					if (RegisterClassExW(&structWindowClass))
-						mapClassNames[classString] = classW; // Will be freed when exiting REAPER
-				}
-			}
-			else MessageBox(NULL, "s=0", "", 0);
+			if (RegisterClassEx(&structWindowClass))
+				mapClassNames[classString] = strdup(className); // Class names must be saved, so use strdup (and remember to free memory later)
 		}
 
+		// OK, class exists, so can go ahead to create window
 		if (mapClassNames.count(classString))
 		{
-			int s = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
-			if (s)
+			hwnd = CreateWindowEx(
+				WS_EX_LEFT | WS_EX_ACCEPTFILES | WS_EX_APPWINDOW | WS_EX_CONTEXTHELP,	//DWORD     dwExStyle,
+				mapClassNames[classString], 	//LPCSTR    lpClassName,
+				"", 	//LPCSTR    lpWindowName, // SetWindowText will be used below to set title with (potentially) Unicode text.
+				style, //WS_POPUP, //WS_OVERLAPPEDWINDOW, //WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_VISIBLE | WS_MINIMIZEBOX,	//DWORD     dwStyle,
+				x, 		//int       X,
+				y, 		//int       Y,
+				w, 		//int       nWidth,
+				h, 		//int       nHeight,
+				(HWND)ownerHWNDOptional,	//HWND      hWndParent,
+				NULL,	//HMENU     hMenu,
+				ReaScriptAPI_Instance,//HINSTANCE hInstance,
+				NULL	//LPVOID    lpParam
+			);
+			if (hwnd)
 			{
-				wchar_t* titleW = (wchar_t*)alloca(2 * s * sizeof(wchar_t) + 10); // title name don't need to be saved, so use local alloca
-				if (titleW)
-				{
-					MultiByteToWideChar(CP_UTF8, 0, title, -1, titleW, 2 * s);
-
-					hwnd = CreateWindowExW(
-						WS_EX_LEFT | WS_EX_ACCEPTFILES | WS_EX_APPWINDOW | WS_EX_CONTEXTHELP,	//DWORD     dwExStyle,
-						mapClassNames[classString], 	//LPCWSTR    lpClassName,
-						titleW, //LPCWSTR    lpWindowName,
-						style,	//WS_POPUP, //WS_OVERLAPPEDWINDOW, //WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_VISIBLE | WS_MINIMIZEBOX,	//DWORD     dwStyle,
-						x, 		//int       X,
-						y, 		//int       Y,
-						w, 		//int       nWidth,
-						h, 		//int       nHeight,
-						(HWND)ownerHWNDOptional,	//HWND      hWndParent,
-						NULL,	//HMENU     hMenu,
-						ReaScriptAPI_Instance,//HINSTANCE hInstance,
-						NULL	//LPVOID    lpParam
-					);
-					if (hwnd)
-					{
-						//SetWindowPos(hwnd, HWND_TOP, x, y, w, h, SWP_NOMOVE | SWP_NOSIZE);
-						if (style&WS_MINIMIZE)		ShowWindow(hwnd, SW_SHOWMINIMIZED);
-						else if (style&WS_MAXIMIZE) ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-						else						ShowWindow(hwnd, SW_SHOWNORMAL);
-						UpdateWindow(hwnd);
-					}
-				}
+				SetWindowTextUTF8(hwnd, title); // Since non-widechar function were used to create the window, title must be set separately with potentially Unicode text.
+				//SetWindowPos(hwnd, HWND_TOP, x, y, w, h, SWP_NOMOVE | SWP_NOSIZE);
+				if (style&WS_MINIMIZE)		ShowWindow(hwnd, SW_SHOWMINIMIZED);
+				else if (style&WS_MAXIMIZE) ShowWindow(hwnd, SW_SHOWMAXIMIZED);
+				else						ShowWindow(hwnd, SW_SHOWNORMAL);
+				UpdateWindow(hwnd);
 			}
-				}
+		}
 
 #else
 		hwnd = CreateDialog(nullptr, MAKEINTRESOURCE(0), nullptr, JS_Window_Create_WinProc);
@@ -1693,9 +1859,9 @@ void* JS_Window_Create(const char* title, const char* className, int x, int y, i
 			UpdateWindow(hwnd);
 		}
 #endif
-			}
+	}
 	return hwnd;
-		}
+}
 
 /////////////////////////////////////////////////////////////////
 // Function based on SetWindowPos
@@ -1843,12 +2009,18 @@ bool JS_Window_SetPos(void* windowHWND, const char* ZOrder, int x, int y, int w,
 // This function moves windows without resizing or requiring any info about window size.
 void JS_Window_Move(void* windowHWND, int left, int top)
 {
+#ifdef _WDL_SWELL
+	if (ValidatePtr(windowHWND, "HWND"))
+#endif
 	SetWindowPos((HWND)windowHWND, NULL, left, top, 0, 0, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOSIZE);
 }
 
 // This function resizes windows without moving or requiring any info about window position.
 void JS_Window_Resize(void* windowHWND, int width, int height)
 {
+#ifdef _WDL_SWELL
+	if (ValidatePtr(windowHWND, "HWND"))
+#endif
 	SetWindowPos((HWND)windowHWND, NULL, 0, 0, width, height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE);
 }
 
@@ -1948,6 +2120,9 @@ bool JS_Window_SetStyle(void* windowHWND, char* style)
 
 void JS_Window_Update(HWND windowHWND)
 {
+#ifdef _WDL_SWELL
+	if (ValidatePtr(windowHWND, "HWND"))
+#endif
 	UpdateWindow(windowHWND);
 }
 
@@ -1955,6 +2130,10 @@ void JS_Window_Update(HWND windowHWND)
 //!!!! that most functions seem to work with.  NSWindow is more of a container.
 void* JS_Window_GetRoot(void* windowHWND)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return nullptr;
+#endif
+
 #ifdef _WIN32
 	return GetAncestor((HWND)windowHWND, GA_ROOT);
 #elif __linux__
@@ -1978,7 +2157,53 @@ void* JS_Window_GetRoot(void* windowHWND)
 
 bool JS_Window_InvalidateRect(HWND windowHWND, int left, int top, int right, int bottom, bool eraseBackground)
 {
+	using namespace Julian;
+	
+	if (left >= right || top >= bottom)
+		return false;
+	#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) 
+		return false;
+	#endif
+		
 	RECT rect{ left, top, right, bottom };
+	
+	// If window is composited, details of Invalidated Rects are stored -- and always erase background.
+	if (mapWindowData.count(windowHWND))
+	{
+		RECT& iR = mapWindowData[windowHWND].doneInvalidRect;
+		
+		// If not yet invalidated in this paint cycle, InvalidateRect
+		if (iR.left == iR.right || iR.top == iR.bottom)
+		{
+			iR = rect;
+			return InvalidateRect(windowHWND, &iR, true);
+		}
+	#ifdef _WIN32
+		// WindowsOS: If window is already invalidated, store rect in to-be-invalidated i2R, to be invalidated during WM_PAINT callback 
+		//		(This avoids dozens of overlapping Invalidates in case of scripts with dozens of composited bitmaps, such as Area(51).)
+		else
+		{
+			RECT& i2R = mapWindowData[windowHWND].mustInvalidRect;
+			if (RECT_IS_EMPTY(i2R))
+				i2R = rect;
+			else
+				UNION_RECT(i2R, rect);
+			return true;
+		}
+	#else
+		// Linux/macOS: InvalidateRect cannot be called inside WM_PAINT callback, so must invalidate now.  But only necessary if rect expands existing iR.
+		else if (left < iR.left || top < iR.top || right > iR.right || bottom > iR.bottom)
+		{
+			UNION_RECT(iR, rect);
+			return InvalidateRect(windowHWND, &iR, true);
+		}
+		// rect area already invalidated, so no need to do anything else
+		else
+			return true;		
+	#endif
+	}
+	
 	return InvalidateRect(windowHWND, &rect, (BOOL)eraseBackground);
 }
 
@@ -2033,16 +2258,26 @@ bool JS_Window_SetOpacity(HWND windowHWND, const char* mode, double value)
 
 bool JS_Window_SetTitle(void* windowHWND, const char* title)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return false;
+#endif
 	return !!SetWindowText((HWND)windowHWND, title); // On Windows, this is DEFINE'd in win32_tuf8.h as GetWindowTextUTF8, which enables Windows' WCHAR and UNICODE.
 }
 
 void JS_Window_GetTitle(void* windowHWND, char* titleOutNeedBig, int titleOutNeedBig_sz)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) { titleOutNeedBig[0] = 0; return; }
+#endif
 	GetWindowText((HWND)windowHWND, titleOutNeedBig, titleOutNeedBig_sz); // On Windows, this is DEFINE'd in win32_tuf8.h as GetWindowTextUTF8, which enables Windows' WCHAR and UNICODE.
 }
 
 void JS_Window_GetClassName(HWND windowHWND, char* classOut, int classOut_sz)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) { classOut[0] = 0; return; }
+#endif
+
 #ifdef _WIN32
 	classOut[0] = '\0';
 	wchar_t* classW = (wchar_t*)alloca(1024 * sizeof(wchar_t));
@@ -2068,6 +2303,22 @@ void* JS_Window_HandleFromAddress(double address)
 void JS_Window_AddressFromHandle(void* handle, double* addressOut)
 {
 	*addressOut = (double)(intptr_t)handle;
+}
+
+double* JS_ArrayFromAddress(double address)
+{
+	// Casting to intptr_t removes fractions and, in case of 32-bit systems, truncates too large addresses.
+	//		This provides easy way to check whether address was valid.
+	intptr_t intAddress = (intptr_t)address;
+	if ((double)intAddress == address)
+		return (double*)intAddress;
+	else
+		return nullptr;
+}
+
+void JS_AddressFromArray(double* array, double* addressOut)
+{
+	*addressOut = (double)(intptr_t)array;
 }
 
 //---------------------------------------------------------------------------------
@@ -2105,8 +2356,12 @@ BOOL CALLBACK JS_Window_IsWindow_Callback_Top(HWND hwnd, LPARAM lParam)
 bool  JS_Window_IsWindow(void* windowHWND)
 {
 #ifdef _WIN32
-	return !!IsWindow((HWND)windowHWND);
+	return (bool)IsWindow((HWND)windowHWND);
 #else
+	return ValidatePtr(windowHWND, "HWND");
+	/*
+	Older versïons: 
+
 	if (Julian::REAPER_VERSION >= 5.974)
 		return ValidatePtr(windowHWND, "HWND");
 	else {
@@ -2124,7 +2379,7 @@ bool  JS_Window_IsWindow(void* windowHWND)
 			HWND midiview = GetDlgItem(editor, 1000);
 			if (target == midiview)
 				return true;
-		}
+		}*/
 
 		/*HWND main = GetMainHwnd();
 		if (main) {
@@ -2135,11 +2390,11 @@ bool  JS_Window_IsWindow(void* windowHWND)
 				if (!target) return true;
 		}
 	}*/
-
+	/*
 		EnumWindows(JS_Window_IsWindow_Callback_Top, reinterpret_cast<LPARAM>(&target));
 
 		return !target;
-	}
+	}*/
 #endif
 }
 
@@ -2180,9 +2435,12 @@ bool JS_WindowMessage_ListIntercepts(void* windowHWND, char* listOutNeedBig, int
 		
 }
 
+
 bool JS_WindowMessage_Post(void* windowHWND, const char* message, double wParam, int wParamHighWord, double lParam, int lParamHighWord)
 {
 	using namespace Julian;
+
+	if (!IsWindow((HWND)windowHWND)) return false;
 
 	std::string msgString = message;
 	UINT uMsg = 0;
@@ -2197,17 +2455,17 @@ bool JS_WindowMessage_Post(void* windowHWND, const char* message, double wParam,
 			return false;
 	}
 	
-	WPARAM wP;
+	WPARAM fullWP;
 	if (wParamHighWord || ((wParam < 0) && (-(2^15) > wParam))) // WARNING: Negative values (such as mousewheel turns) are not bitwise encoded the same in low WORD vs entire WPARAM. So if small negative, assume that low WORD is intended.
-		wP = MAKEWPARAM(wParam, wParamHighWord);
+		fullWP = MAKEWPARAM(wParam, wParamHighWord);
 	else
-		wP = (WPARAM)(int64_t)wParam;
+		fullWP = (WPARAM)(int64_t)wParam;
 		
-	LPARAM lP;
+	LPARAM fullLP;
 	if (lParamHighWord || ((lParam < 0) && (-(2 ^ 15) > lParam)))
-		lP = MAKELPARAM(lParam, lParamHighWord);
+		fullLP = MAKELPARAM(lParam, lParamHighWord);
 	else
-		lP = (LPARAM)(int64_t)lParam;
+		fullLP = (LPARAM)(int64_t)lParam;
 		
 	HWND hwnd = (HWND)windowHWND;
 
@@ -2215,17 +2473,24 @@ bool JS_WindowMessage_Post(void* windowHWND, const char* message, double wParam,
 	if (mapWindowData.count(hwnd)) {
 		sWindowData& w = mapWindowData[hwnd];
 		if (w.mapMessages.count(uMsg)) {
-			w.origProc(hwnd, uMsg, wP, lP); // WindowProcs usually return 0 if message was handled.  But not always, 
+#ifdef _WIN32
+			CallWindowProc((WNDPROC)(intptr_t)w.origProc, hwnd, uMsg, fullWP, fullLP);
+#else
+			((WNDPROC)(intptr_t)w.origProc)(hwnd, uMsg, fullWP, fullLP);
+#endif
 			return true;
 		}
 	}
-	return !!PostMessage(hwnd, uMsg, wP, lP);
+	// Not intercepted, so just pass on to Win32
+	return !!PostMessage(hwnd, uMsg, fullWP, fullLP);
 }
-
+ 
 
 int JS_WindowMessage_Send(void* windowHWND, const char* message, double wParam, int wParamHighWord, double lParam, int lParamHighWord)
 {
 	using namespace Julian;
+
+	if (!IsWindow((HWND)windowHWND)) return 0;
 
 	std::string msgString = message;
 	UINT uMsg = 0;
@@ -2237,23 +2502,38 @@ int JS_WindowMessage_Send(void* windowHWND, const char* message, double wParam, 
 		char* endPtr;
 		uMsg = strtoul(message, &endPtr, 16);
 		if (endPtr == message || errno != 0) // 0x0000 is a valid message type, so cannot assume 0 is error.
-			return FALSE;
+			return false;
 	}
-	
-	WPARAM wP;
+
+	WPARAM fullWP;
 	if (wParamHighWord || ((wParam < 0) && (-(2 ^ 15) > wParam))) // WARNING: Negative values (such as mousewheel turns) are not bitwise encoded the same in low WORD vs entire WPARAM. So if small negative, assume that low WORD is intended.
-		wP = MAKEWPARAM(wParam, wParamHighWord);
+		fullWP = MAKEWPARAM(wParam, wParamHighWord);
 	else
-		wP = (WPARAM)(int64_t)wParam;
+		fullWP = (WPARAM)(int64_t)wParam;
 
-	LPARAM lP;
+	LPARAM fullLP;
 	if (lParamHighWord || ((lParam < 0) && (-(2 ^ 15) > lParam)))
-		lP = MAKELPARAM(lParam, lParamHighWord);
+		fullLP = MAKELPARAM(lParam, lParamHighWord);
 	else
-		lP = (LPARAM)(int64_t)lParam;
+		fullLP = (LPARAM)(int64_t)lParam;
 
-	return (int)SendMessage((HWND)windowHWND, uMsg, wP, lP);
+	HWND hwnd = (HWND)windowHWND;
+
+	// Is this window currently being intercepted?
+	if (mapWindowData.count(hwnd)) {
+		sWindowData& w = mapWindowData[hwnd];
+		if (w.mapMessages.count(uMsg)) {
+#ifdef _WIN32
+			return (int)CallWindowProc((WNDPROC)(intptr_t)w.origProc, hwnd, uMsg, fullWP, fullLP);
+#else
+			return (int)((WNDPROC)(intptr_t)w.origProc)(hwnd, uMsg, fullWP, fullLP);
+#endif
+		}
+	}
+	// Not intercepted, so just pass on to Win32
+	return (int)SendMessage(hwnd, uMsg, fullWP, fullLP);
 }
+
 
 // swell does not define these macros:
 #ifndef GET_KEYSTATE_WPARAM
@@ -2266,6 +2546,9 @@ int JS_WindowMessage_Send(void* windowHWND, const char* message, double wParam, 
 
 bool JS_Window_OnCommand(void* windowHWND, int commandID)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return false;
+#endif
 	return JS_WindowMessage_Post(windowHWND, "WM_COMMAND", commandID, 0, 0, 0);
 }
 
@@ -2309,26 +2592,59 @@ bool JS_WindowMessage_Peek(void* windowHWND, const char* message, bool* passedTh
 	return false;
 }
 
+//TIMERPROC JS_InvalidateTimer(HWND hwnd, UINT msg, UINT_PTR timerID, DWORD millisecs);
+// After delay, this timer is called to re-invalidate stored updateRect, which will re-send WM_PAINT
+void JS_InvalidateTimer(HWND hwnd, UINT msg, UINT_PTR timerID, DWORD millisecs)
+{
+	using namespace Julian;
+	//if (IsWindow(hwnd)) // Is it really necessary to check IsWindow?  On WindowsOS, GetClientRect and other window-related functions don't crash if hwnd doesn't exist.
+	//{
+		if (mapWindowData.count(hwnd))
+		{
+			RECT& i2R = mapWindowData[hwnd].mustInvalidRect;
+			if (!RECT_IS_EMPTY(i2R)) // Anything left to paint?
+			{
+				RECT& iR = mapWindowData[hwnd].doneInvalidRect;
+				if (RECT_IS_EMPTY(iR))
+					iR = i2R;
+				else
+					UNION_RECT(iR, i2R);
+				InvalidateRect(hwnd, &iR, true);
+			}
+			i2R = { 0, 0, 0, 0 };
+		}
+		else
+		{
+			RECT cR; GetClientRect(hwnd, &cR);
+			InvalidateRect(hwnd, &cR, true);
+		}
+	//}
+}
+
+
 LRESULT CALLBACK JS_WindowMessage_Intercept_Callback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	using namespace Julian;
 
-	// If not in map, we don't know how to call original process.
+	// If hwnd not in map, something went awry. Don't know how to call original window process.
+	// This might mean that the window received a WM_DESTROY message and was removed from the map, but wasn't in fact destroyed?
 	if (mapWindowData.count(hwnd) == 0)
 		return 1;
 
+	// Get reference/alias because want to write updates into existing struct.
+	sWindowData& w = mapWindowData[hwnd]; 
+
 	// INTERCEPT / BLOCK WINDOW MESSAGES
-	sWindowData& windowData = mapWindowData[hwnd]; // Get reference/alias because want to write into existing struct.
-
+	
 	// Event that should be intercepted? 
-	if (windowData.mapMessages.count(uMsg)) // ".contains" has only been implemented in more recent C++ versions
+	if (w.mapMessages.count(uMsg)) // ".contains" has only been implemented in more recent C++ versions
 	{
-		windowData.mapMessages[uMsg].time = time_precise();
-		windowData.mapMessages[uMsg].wParam = wParam;
-		windowData.mapMessages[uMsg].lParam = lParam;
+		w.mapMessages[uMsg].time = time_precise();
+		w.mapMessages[uMsg].wParam = wParam;
+		w.mapMessages[uMsg].lParam = lParam;
 
-		// If event will not be passed through, can quit here.
-		if (windowData.mapMessages[uMsg].passthrough == false)
+		// If event will not be passed through, must return inside from inside this switch.
+		if (w.mapMessages[uMsg].passthrough == false)
 		{
 			// Most WM_ messages return 0 if processed, with only a few exceptions:
 			switch (uMsg)
@@ -2346,111 +2662,261 @@ LRESULT CALLBACK JS_WindowMessage_Intercept_Callback(HWND hwnd, UINT uMsg, WPARA
 		}
 	}
 
-	// All messages that aren't blocked, end up here
+	// PASSTHROUGH MESSAGE: All messages that aren't blocked, end up here
+	
+	LRESULT result; // of call to original WndProc
+	bool gotResultYet = false; // Unfortunately, the return value of WM_PAINT is not restricted, so I need a separate variable to record whether origproc was already called
 
 	// COMPOSITE LICE BITMAPS - if any
-	if (uMsg == WM_PAINT && !windowData.mapBitmaps.empty())
+	/* The basic idea is quite simple:  
+		* Assume that REAPER only paints its windows when receiving WM_PAINT messages.
+		* Whenever a WM_PAINT is received, first call the window's original WndProc to update the window with REAPER's own stuff (which should paint over composited bitmap images), 
+		* then, if any bitmaps are composited to this window, blit the bitmaps into the Invalidated part of the window.
+		* Hope that the tiny fraction of a second between REAPER's updates and the bitmap blits don't cause flickering.
+	
+	There are a few crucial differences between WM_PAINT painting on WindowsOS vs Linux/macOS with WDL/swell:
+				  	
+	  	1) BeginPaint vs GetUpdateRect:
+	 		WDL/swell doesn't provide a separate GetUpdateRect function, but BeginPaint can be used. 
+	  		Fortunately, swell's BeginPaint is innocuous: It doesn't do background erasing, and doesn't even need an EndPaint. (EndPaint is simply an empty function that simply returns TRUE). 
+	  		In fact, swell's GetDC uses BeginPaint to get the HDC.
+	  	2) The UpdateRect:
+	 		On WindowsOS, the entire RECT returned by GetUpdateRect (named uR) is not necessarily invalidated -- uR is simply the smallest RECT that contains all the invalidated sub-RECTs.
+	  		So, on WindowsOS, to make sure that the extension knows exactly which areas will be re-painted, the entire uR has to be Invalidated before calling the original WndProc.
+			(Why is this important?  If transparent bitmaps are re-blitted onto parts of the window that have not been re-painted, the blitted images will pile up, becoming more and more opaque, so must be very careful!)
+	  		On WDL/swell (as far as I can tell), the entire RECT returned by BeginPaint will be re-drawn, so no need for additional InvalidateRect.
+	  	3) InvalidateRect:
+	 		The previous point is fortunate, since on WDL/swell, InvalidateRect doesn't have any effect if called from within this callback function!!  WARNING!!
+	  		WDL/swell's InvalidateRect doesn't change the behaviour of an immediately following call to the original WndProc inside the callback, and doesn't change the UpdateRect of the next time that WM_PAINT is sent.
+	 		On WindowsOS, InvalidateRect can succesfully be called inside the callback.
+	  	4) Original WndProc:
+	 		On WindowsOS, the original WndProc is responsible for erasing the background and resetting the UpdateRect.
+	  		On WDL/swell, the original WndProc doesn't seem to do that, and the background gets erased even if WM_PAINT and WM_ERASEBCKGRD is blocked.
+	  	5) Flickering:
+	 		On WindowsOS, the amount of flickering seems to be affected by the frequency of WM_PAINT updates, each of which requires blitting of the composited bitmaps.
+	  		I am not sure why this is happening, and it may be influenced randomly by GPU speed, screen refresh rate, etc.  The only way that I have found to reduce or even completely remove flicker, is to lower the frequency.
+	  		On WDL/swell, preseumably since REAPER handles both window painting and bitmap blitting, they remain synchronized.  
+			It seems that REAPER does the blitting after doing its own updating of the window contents, and the window is updated once per script defer cycle.
+	 		Another WARNING!!  On macOS, this may not be true if GPU acceleration is enabled in REAPER's Preferences -> Advanced UI/system tweaks.  Some users report that the composited images are not visible at all.  
+	  
+	  So, how does this extension handle WM_PAINT and compositing differently on WindowsOS vs WDL/swell?
+	  
+		1) InvalidateRect:
+			On WindowsOS, InvalidateRect will be called within the callback to ensure that the entire updateRECT will in fact be redrawn.
+		2) Timer callback:
+			On WindowsOS, JS_Composite_Delay can be used to set the frequency of WM_PAINT updates.  
+			WM_PAINT messages that are received too soon will be blocked, and a timer callback function will be set to re-Invalidate the window after the delay time.
+		3) RECT mustInvalidRect:
+			On WindowsOS, to ensure that the window is correctly updated by the timer after the delay, the blocked UpdateRect RECT that should have been updated is stored in mapWindowData[hwnd].mustInvalidRect.
+			mapWindowData[hwnd].mustInvalidRect stores the union of all RECTs that must be invalidated in the next WM_PAINT cycle.
+	  	3) Skip unneccesary InvalidateRect:
+			On WindowsOS, given that InvalidateRect will in any case be called in this WndProc, and that to-be-invalidated RECTs are stored in mustInvalidRect,
+			there is no need to call InvalidateRect dozens of times per paint cycle (which may happen with scripts such as Area(51), when it composites hundreds of bitmaps at once).
+			Instead, after the first InvalidateRect called by a script, the extension will store all subsequent Invalidated RECTs in mustInvalidRect, to be Invalidated with a single call just before calling the original WndProc.
+		4) RECT doneInvalidRect:
+			On WDL/swell, since InvalidateRect cannot be called inside this WndProc, and since WM_PAINT don't need to be delayed, mustInvalidRect is never used.
+			However, another entry in the mapWindowData, doneInvalidRect, is used to store RECTs that have already been invalidated by this extension (and scripts) in this paint cycle.
+			If the extension receives an InvalidateRect request that falls within the already-invalidated doneInvalidRect, it can be skipped.
+	 */
+	if (uMsg == WM_PAINT)
 	{
-		RECT r{ 0,0,0,0 };
-		GetClientRect(hwnd, &r);
-		InvalidateRect(hwnd, &r, false);  // If entire window isn't redrawn, and if compositing destination falls outside invalidated area, bitmap may be composited multiple times over itself.
+		//char temp[1000]; // just for debugging messages
+		//int c = 0;
 
-		LRESULT result = windowData.origProc(hwnd, uMsg, wParam, lParam);
+		// These two RECTs must guaranteed always reset at each WM_PAINT cycle -- except that mustInvalidRect will be re-assigned if a Timer is set up on WindowsOS.
+		RECT iR  = w.doneInvalidRect;
+		RECT i2R = w.mustInvalidRect; // Stuff that extension wants to update (stored updateRect from previous, delayed cycles, as well as bitmaps that were updated)
+		w.doneInvalidRect = { 0, 0, 0, 0 };
+		w.mustInvalidRect = { 0, 0, 0, 0 };
 
-		HDC windowDC = GetDC(hwnd);
-		if (windowDC) {
-			for (auto& b : windowData.mapBitmaps) {
-				if (LICEBitmaps.count(b.first)) {
-					HDC& bitmapDC = LICEBitmaps[b.first];
-					if (bitmapDC) {
-						sBitmapData& i = b.second;
-						if (i.dstw != -1) {
-							r.left = i.dstx; r.right = i.dstw;
-						}
-						if (i.dsth != -1) {
-							r.top = i.dsty; r.bottom = i.dsth;
-						}
-#ifdef _WIN32
-						AlphaBlend(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
-#else
-						StretchBlt(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, SRCCOPY_USEALPHACHAN);
-#endif
+		// If the window is not composited to any bitmaps, and if there is no remaining to-be-invalidated areas (perhaps from previous timer), can skip this.
+		if (!w.mapBitmaps.empty() || !RECT_IS_EMPTY(w.mustInvalidRect))
+		{
+			#ifdef _WIN32
+			// Only WindowsOS: Does this window have delay settings?  If so, must check time and perhaps set timer to return later.
+			if (mapDelayData.count(hwnd))
+			{
+				// Calculate delay
+				auto d = mapDelayData[hwnd];
+				double delay = d.minTime + (d.maxTime - d.minTime) * (w.mapBitmaps.size() / d.maxBitmaps);
+				if (delay > d.maxTime)
+					delay = d.maxTime;
+
+				double timeNow = time_precise();
+				if (w.lastTime > timeNow) // lastTime should have starting value of 0, but double-check
+					w.lastTime = 0;
+
+				// Has delay passed?  No, too soon.
+				if (timeNow < w.lastTime + delay)
+				{
+					// If the updateRect is not validated before returning, the system will continue to try to send WM_PAINT, and this will slow down REAPER.
+					//		(For example, script defer cycle will slow down to the same rate as the composite delay.)
+					// But the updateRect must be repainted as some point, so store the rect in w.invalidRect, to be manually invalidated when delay is over.
+					RECT uR; GetUpdateRect(hwnd, &uR, false); // uR should cover doneInvalidRect
+					if (RECT_IS_EMPTY(i2R)) // empty rect?
+						i2R = uR;
+					else if (!RECT_IS_EMPTY(uR))
+						UNION_RECT(i2R, uR);
+					w.mustInvalidRect = i2R;
+					RECT cR; GetClientRect(hwnd, &cR);
+					ValidateRect(hwnd, &cR); // Don't want REAPER to desperately re-send WM_PAINT
+					if (!w.timerID)
+						w.timerID = SetTimer(hwnd, 0, static_cast<UINT>(1001 * (w.lastTime + delay - timeNow)), (TIMERPROC)JS_InvalidateTimer); // Instead, set my own timer to invalidate
+					return 0; // What is best?  1 or 0 return value?  0 = message processed.
+				}
+
+				// OK, delay has passed, so remove any remaining timer and go ahead with blitting
+				else
+				{
+					if (w.timerID)
+					{
+						KillTimer(hwnd, w.timerID);
+						w.timerID = 0;
 					}
+					w.lastTime = timeNow;
 				}
 			}
-			ReleaseDC(hwnd, windowDC);
-		}
-		return result;
-	}
 
-	// NO COMPOSITING - just return original results
-	else
-		return windowData.origProc(hwnd, uMsg, wParam, lParam);
-}
+			RECT uR; GetUpdateRect(hwnd, &uR, false); // Should cover w.doneInvalidRect
+			RECT cR; GetClientRect(hwnd, &cR);
+			//c = c + sprintf(temp + c, "\nuR before: %i, %i, %i, %i", uR.left, uR.top, uR.right, uR.bottom);
+			if (RECT_IS_EMPTY(uR))
+				uR = i2R;
+			else if (!RECT_IS_EMPTY(i2R)) // if i2R non-empty, combine with uR and make sure both are completely invalidated.
+				UNION_RECT(uR, i2R);
+			CONTRACT_TO_CLIENTRECT(uR, cR);
+			//c = c + sprintf(temp + c, "\niR: %i, %i, %i, %i", iR.left, iR.top, iR.right, iR.bottom);
+			//c = c + sprintf(temp + c, "\ni2R: %i, %i, %i, %i", i2R.left, i2R.top, i2R.right, i2R.bottom);
+			//c = c + sprintf(temp + c, "\nuR after: %i, %i, %i, %i", uR.left, uR.top, uR.right, uR.bottom);
+			if (uR.left < iR.left || uR.top < iR.top || uR.right > iR.right || uR.bottom > iR.bottom) // Has entire uR already been Invalidated?  If not Invalidate.
+				InvalidateRect(hwnd, &uR, false); // WARNING! The entire updateRect is not necessarily invalidated.  So even if uR contains iR, must still InvalidateRect entire uR to ensure that all parts will be redrawn.
 
-		//LRESULT result = windowData.origProc(hwnd, uMsg, wParam, lParam); // PRF_CLIENT | PRF_, );
-		/*
-		cW, cH = GetClientRect
-		RECT rr{ 10000, 10000, 0, 0 };
-		if (uMsg == WM_PAINT) {
-			if (!windowData.mapBitmaps.empty()) {
-				for (auto& b : windowData.mapBitmaps) {
-					sBitmapData& i = b.second;
-					if (i.dstx < rr.left) rr.left = i.dstx;
-					if (i.dsty < rr.top)  rr.top  = i.dsty;
-					if (i.dstx+i.dstw > rr.right) rr.right = i.dstx+i.dstw;
-					if (i.dsty+i.dsth > rr.bottom) rr.bottom = i.dsty+i.dsth;
-					InvalidateRect(hwnd, &rr, true);
-				}
+			// CALL ORIGINAL WNDPROC
+			result = CallWindowProc((WNDPROC)(intptr_t)w.origProc, hwnd, uMsg, wParam, lParam); gotResultYet = true;
+
+			#else
+
+			PAINTSTRUCT p; BeginPaint(hwnd, &p); // swell doesn't provide a separate GetUpdateRect function. swell's BeginPaint is innocuous and doesn't start painting - even GetDC uses BeginPaint to get DC.  Doesn't need EndPaint, which just return TRUE.
+			RECT& uR = p.rcPaint;
+			RECT  cR; GetClientRect(hwnd, &cR);
+
+			// CALL ORIGINAL WNDPROC
+			result = ((WNDPROC)(intptr_t)w.origProc)(hwnd, uMsg, wParam, lParam); gotResultYet = true;
+
+			#endif
+
+			/*	Before blitting, first check: is entire client area invalidated?
+			If 1) only part of the client area is invalidated, and 2) if the invalidatedRECT only partially overlaps the destinationRECT of a bitmap 
+				-- and 3) if the bitmap is stretched/scaled -- it may not be possible to directly blit only the overlapped part into the window.
+			For example, if a 5x5 bitmap is blitted into a 1000x1000 area, but only a small 100x50 area is invalidated (which may happen if a tooltip pops up),
+				StretchBlt and AlphaBlend, which only accept integer arguments, cannot blit only the affected area.
+			How can this be handled?  What this extension does, is to use a two-step solution:
+				1) First, any bitmap that is partially overlapped and also stretched, is ScaledBlitted into a temporary bitmap, Julian::compositeCanvas (with stretching, but without alphablending).
+				2) The overlapping section (*only* this section) is then blitted without stretching (but with alpha blending) onto the window.
+			(When this two-step solution is applied, must must make sure that the temporary canvas is at least as big as the target client area.) 
+
+			Since this two-step solution is slower than directly blitting to the window, the extension only uses it when necessary.
+			In particular, if the entire client area is invalidated, the extension relies on WindowsOS or WDL/swell 
+				to automatically clip blitted images to the client area, since they can do so much faster.   
+
+			UPDATE v1.215:
+			In this version, if __APPLE__ and Metal is enabled, extension will *not* rely on REAPER to clip images to client area, even if entire client area is invalidated.  
+			Therefore, partially offscreen bitmaps will handles with two-step solution described above.
+			 */
+
+			bool updateEntireClientArea = (uR.left <= 0 && uR.top <= 0 && uR.right >= cR.right && uR.bottom >= cR.bottom);
+#ifdef __APPLE__
+			int metal = (SWELL_EnableMetal(hwnd, 0) > 0);
+#else
+			int metal = false;
+#endif
+			if (metal || !updateEntireClientArea)
+			{
+				int width = compositeCanvas->getWidth();
+				int height = compositeCanvas->getHeight();
+				if (width < cR.right || height < cR.bottom)
+					BOOL resizeOK = compositeCanvas->resize(width > cR.right ? width : cR.right, height > cR.bottom ? height : cR.bottom);
 			}
-		}
 
-		// All events that are not blocked
-		LRESULT r = windowData.origProc(hwnd, uMsg, wParam, lParam);
-		*/
+			// Finally, do the compositing!  Iterate through all linked bitmaps.
+			HDC windowDC = GetDC(hwnd);
+			HDC canvasDC = compositeCanvas->getDC();
+			HDC srcDC; // For each source bitmap -- Will be assigned later
+			if (windowDC && canvasDC)
+			{
+				for (auto& b : w.mapBitmaps) // Map that contains all the linked bitmaps: b.first is a LICE_IBitmap*
+				{
+					sBlitRects& coor = b.second; // Coordinates: b.second is a struct with src and dst coordinates that specify where the bitmaps should be blitted
+					if (coor.dstw != 0 && coor.dstw != 0) // Making size 0 is common way of quickly hiding bitmap without needing to call Composite_Unlink
+					{
+						if (mLICEBitmaps.count(b.first)) // Double-check that the bitmap actually still exist?
+						{
+							// Calculate destination rect - updated for current client size. If dstw or dsth is -1, bitmap is stretched over entire width or height of clientRect. If not, use dst coordinates.
+							RECT dstR = { coor.dstx, coor.dsty, coor.dstw, coor.dsth };  // WARNING: dstR and overlapR use relative width/height, not absolute right/left
+							if (coor.dstw == -1) { dstR.left = 0; dstR.right = cR.right; }
+							if (coor.dsth == -1) { dstR.top = 0; dstR.bottom = cR.bottom; }
 
-		/*
-		if (uMsg == WM_PAINT) {
-			if (!windowData.mapBitmaps.empty()) {
-				HDC windowDC = GetDC(hwnd);
-				if (windowDC) {
-					for (auto& b : windowData.mapBitmaps) {
-						if (LICEBitmaps.count(b.first)) {
-							HDC& bitmapDC = LICEBitmaps[b.first];
-							if (bitmapDC) {
-								sBitmapData& i = b.second;
-								RECT r{ i.dstx, i.dsty, i.dstw, i.dsth };
-								if (i.dstw == -1 || i.dsth == -1) {
-									GetClientRect(hwnd, &r);
-									if (i.dstw != -1) {
-										r.left = i.dstx; r.right = i.dsty;
+							// Does dstR overlap with uR?  If not, skip bitmap.  (WARNING: dstR uses width/height, uR uses right/bottom.)
+							if (dstR.left < uR.right && dstR.top < uR.bottom && dstR.top + dstR.bottom > uR.top && dstR.left + dstR.right > uR.left)
+							{
+								// OPTION 1:  Blit direcly to windowDC, let blitting function clip images that are partially offscreen.
+								if (updateEntireClientArea && !metal)
+								{
+									if (srcDC = b.first->getDC())
+										jsAlphaBlend(windowDC, dstR.left, dstR.top, dstR.right, dstR.bottom, srcDC, coor.srcx, coor.srcy, coor.srcw, coor.srch);
+								}
+
+								else
+								{
+									RECT overlapR; // How does the dstR overlap with the updateRect uR?  Only the overlapping part must be blitted.
+									overlapR.left = (dstR.left > uR.left) ? dstR.left : uR.left;
+									overlapR.top = (dstR.top > uR.top) ? dstR.top : uR.top;
+									overlapR.right = (dstR.left + dstR.right < uR.right) ? dstR.left + dstR.right - overlapR.left : uR.right - overlapR.left;
+									overlapR.bottom = (dstR.top + dstR.bottom < uR.bottom) ? dstR.top + dstR.bottom - overlapR.top : uR.bottom - overlapR.top;
+
+									// OPTION 2: Blit direcly to windowDC.
+									if ((overlapR.right == dstR.right && overlapR.bottom == dstR.bottom) // dstR is fully within uR, so no need to clip and can StretchBlt directly into windowDC
+									|| (dstR.right == coor.srcw && dstR.bottom == coor.srch)) // or, dstR and uR partially overlap, but no stretching: Only blit overlapping part
+									{
+										if (srcDC = b.first->getDC())
+											jsAlphaBlend(windowDC, overlapR.left, overlapR.top, overlapR.right, overlapR.bottom, srcDC, coor.srcx + (overlapR.left - dstR.left), coor.srcy + (overlapR.top - dstR.top), coor.srcw + (overlapR.right - dstR.right), coor.srch + (overlapR.bottom - dstR.bottom));
 									}
-									else if (i.dsth != -1) {
-										r.top = i.dsty; r.bottom = i.dsth;
+
+									// OPTION 3: Stretching and partially overlapping: Two steps: first LICE_ScaledBlt to temporary canvas, then GDI BitBlt overlapping part into window
+									else
+									{
+										LICE_ScaledBlit(compositeCanvas, b.first, dstR.left, dstR.top, dstR.right, dstR.bottom, coor.srcx, coor.srcy, coor.srcw, coor.srch, 1, LICE_BLIT_MODE_COPY);
+										jsAlphaBlend(windowDC, overlapR.left, overlapR.top, overlapR.right, overlapR.bottom, canvasDC, overlapR.left, overlapR.top, overlapR.right, overlapR.bottom);
 									}
 								}
-#ifdef _WIN32
-								AlphaBlend(memDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA });
-#else
-								StretchBlt(windowDC, r.left, r.top, r.right, r.bottom, bitmapDC, i.srcx, i.srcy, i.srcw, i.srch, SRCCOPY_USEALPHACHAN);
-#endif
 							}
 						}
 					}
-					//ReleaseDC(hwnd, windowDC);
 				}
+				ReleaseDC(hwnd, windowDC);
 			}
 		}
-		
-		//BitBlt(windowDC, 0, 0, r.right, r.bottom, memDC, 0, 0, SRCCOPY);
-
-		//SelectObject(memDC, oldbitmap);
-		DeleteObject(hbitmap);
-		DeleteDC(memDC);
-		
-		return result;
+		//if (c) ShowConsoleMsg(temp);
 	}
-}*/
+	
+	// NO COMPOSITING -- call original WndProc and return results
+	
+	if (!gotResultYet)
+	{
+		#ifdef _WIN32
+		result = CallWindowProc((WNDPROC)(intptr_t)w.origProc, hwnd, uMsg, wParam, lParam);
+		#else
+		result = ((WNDPROC)(intptr_t)w.origProc)(hwnd, uMsg, wParam, lParam);
+		#endif
+
+		// If DESTROYING window, must remove from mapWindowData before going ahead.
+		// Is WM_DESTROY guaranteed to be the last message that a window receives?
+		if (uMsg == WM_DESTROY) //&& !IsWindow(hwnd))
+			mapWindowData.erase(hwnd);
+	}
+
+	return result;
+}
 
 
 // Intercept a single message type
@@ -2477,7 +2943,7 @@ int JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passt
 	// Not yet intercepted, so create new sWindowdata map
 	if (Julian::mapWindowData.count(hwnd) == 0) 
 	{
-		if (!JS_Window_IsWindow(hwnd)) 
+		if (!IsWindow(hwnd)) 
 			return ERR_NOT_WINDOW;
 
 		HDC windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
@@ -2485,16 +2951,16 @@ int JS_WindowMessage_Intercept(void* windowHWND, const char* message, bool passt
 			return ERR_WINDOW_HDC;
 
 		// Try to get the original process.
-		WNDPROC origProc = nullptr;
+		LONG_PTR origProc = 0;
 		#ifdef _WIN32
-		origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		origProc = SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 		#else
-		origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		origProc = SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 		#endif
 		if (!origProc) 
-			return ERR_ORIGPROC;
+			return ERR_ORIG_WNDPROC;
 
-		Julian::mapWindowData.emplace(hwnd, sWindowData{ origProc }); // , map<UINT, sMsgData>{}, map<LICE_IBitmap*, sBitmapData>{} }); // Insert empty map
+		Julian::mapWindowData.emplace(hwnd, sWindowData{ origProc }); // , map<UINT, sMsgData>{}, map<LICE_IBitmap*, sBlitRects>{} }); // Insert empty map
 	}
 
 	// Window already intercepted.  So try to add to existing maps.
@@ -2609,7 +3075,7 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 	{
 		// IsWindow is slow in Linux and MacOS. 
 		// However, checking may be prudent this may be necessary since Linux will crash if windowHWND is not an actual window.
-		if (!JS_Window_IsWindow(hwnd)) 
+		if (!IsWindow(hwnd)) 
 			return ERR_NOT_WINDOW;
 
 		HDC windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
@@ -2617,14 +3083,14 @@ int JS_WindowMessage_InterceptList(void* windowHWND, const char* messages)
 			return ERR_WINDOW_HDC;
 
 		// Try to get the original process.
-		WNDPROC origProc = nullptr;
+		LONG_PTR origProc = 0;
 #ifdef _WIN32
-		origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		origProc = SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 #else
-		origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		origProc = SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
 #endif
 		if (!origProc) 
-			return ERR_ORIGPROC;
+			return ERR_ORIG_WNDPROC;
 
 		// Got everything OK.  Finally, store struct.
 		Julian::mapWindowData.emplace(hwnd, sWindowData{ origProc, newMessages }); // Insert into static map of namespace
@@ -2698,8 +3164,8 @@ int JS_WindowMessage_Release(void* windowHWND, const char* messages)
 		existingMessages.erase(it);
 
 	// If no messages need to be intercepted any more, release this window
-	if (existingMessages.empty() && mapWindowData[hwnd].mapBitmaps.empty())
-		JS_WindowMessage_RestoreOrigProc(hwnd);
+	//if (existingMessages.empty() && mapWindowData[hwnd].mapBitmaps.empty())
+	JS_WindowMessage_RestoreOrigProcAndErase();
 
 	return TRUE;
 }
@@ -2707,33 +3173,46 @@ int JS_WindowMessage_Release(void* windowHWND, const char* messages)
 void JS_WindowMessage_ReleaseAll()
 {
 	using namespace Julian;
-	for (auto it = mapWindowData.begin(); it != mapWindowData.end(); ++it) {
-		JS_WindowMessage_ReleaseWindow(it->first);
-	}
+	for (auto& m : Julian::mapWindowData) 
+		m.second.mapMessages.clear(); // delete intercepts, but leave linked bitmaps alone
+	JS_WindowMessage_RestoreOrigProcAndErase();
 }
 
 void JS_WindowMessage_ReleaseWindow(void* windowHWND)
 {
 	using namespace Julian;
 	HWND hwnd = (HWND)windowHWND;
-	if (mapWindowData.count(hwnd)) {
-		if (mapWindowData[hwnd].mapBitmaps.empty()) JS_WindowMessage_RestoreOrigProc(hwnd); // no linked bitmaps either, so can restore original WNDPROC
-		else mapWindowData[hwnd].mapMessages.clear(); // delete intercepts, but leave linked bitmaps alone
-	}
+	if (mapWindowData.count(hwnd))
+		mapWindowData[hwnd].mapMessages.clear(); // delete intercepts, but leave linked bitmaps alone
+
+	JS_WindowMessage_RestoreOrigProcAndErase();
+	/*	if (mapWindowData[hwnd].mapBitmaps.empty()) 
+			JS_WindowMessage_RestoreOrigProcAndErase(hwnd); // no linked bitmaps either, so can restore original WNDPROC
+		else 
+			mapWindowData[hwnd].mapMessages.clear(); // delete intercepts, but leave linked bitmaps alone
+			*/
 }
 
-static void JS_WindowMessage_RestoreOrigProc(HWND hwnd)
+// Call this function to clean up intercepts, after clearing mapMessages or mapBitmaps.
+// WARNING: DO NOT call this function inside a loop over mapWindowData, since this function may delete entries in mapWindowData.
+// This function does not do InvalidateRect.
+void JS_WindowMessage_RestoreOrigProcAndErase()
 {
 	using namespace Julian;
+	std::set<HWND> toDelete;
+	for (auto& m : Julian::mapWindowData) 
+		if (m.second.mapBitmaps.empty() && m.second.mapMessages.empty())
+			toDelete.insert(m.first);
 
-	if (mapWindowData.count(hwnd)) {
-		if (JS_Window_IsWindow(hwnd)) {
-			WNDPROC origProc = mapWindowData[hwnd].origProc;
-#ifdef _WIN32
-			SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)origProc);
-#else
-			SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)origProc);
-#endif
+	for (HWND hwnd : toDelete)
+	{
+		if (IsWindow(hwnd) && Julian::mapWindowData[hwnd].origProc)
+		{
+			#ifdef _WIN32
+			SetWindowLongPtr(hwnd, GWLP_WNDPROC, Julian::mapWindowData[hwnd].origProc);
+			#else			
+			SetWindowLong(hwnd, GWL_WNDPROC, Julian::mapWindowData[hwnd].origProc);
+			#endif
 		}
 		mapWindowData.erase(hwnd);
 	}
@@ -2806,21 +3285,33 @@ void* JS_Mouse_LoadCursor(int cursorNumber)
 void* JS_Mouse_LoadCursorFromFile(const char* pathAndFileName, bool* forceNewLoadOptional)
 {
 	using namespace Julian;
-	string  file	= pathAndFileName;
+	string  fileStr	= pathAndFileName;
 	HCURSOR cursor	= NULL;
 	if ((forceNewLoadOptional && *forceNewLoadOptional)
-		|| !(mapFileToMouseCursor.count(file)))
+		|| !(mapFileToMouseCursor.count(fileStr))) // If not loaded yet, must load from file
 	{
-#ifdef _WIN32
-		cursor = LoadCursorFromFile(pathAndFileName);
-#else
+#ifdef _WIN32 // convert to WideChar for Unicode support
+		int wideCharLength = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pathAndFileName, -1, NULL, 0);
+		if (wideCharLength)
+		{
+			WCHAR* widePath = (WCHAR*) alloca(wideCharLength * sizeof(WCHAR) * 2);
+			if (widePath)
+			{
+				wideCharLength = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pathAndFileName, -1, widePath, wideCharLength * 2);
+				if (wideCharLength)
+				{
+					cursor = LoadCursorFromFileW(widePath);
+				}
+			}
+		}
+#else // swell uses UTF8, so no need to convert
 		cursor = SWELL_LoadCursorFromFile(pathAndFileName);
 #endif
 		if (cursor)
-			mapFileToMouseCursor[file] = cursor;
+			mapFileToMouseCursor[fileStr] = cursor;
 	}
 	else
-		cursor = mapFileToMouseCursor[file];
+		cursor = mapFileToMouseCursor[fileStr];
 
 	return cursor;
 }
@@ -2844,31 +3335,49 @@ void* JS_Mouse_GetCursor()
 
 void* JS_GDI_GetClientDC(void* windowHWND)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return nullptr;
+#endif
 	HDC dc = GetDC((HWND)windowHWND);
-	if (dc) Julian::GDIHDCs.emplace(dc);
+	if (dc) Julian::GDIHDCs.emplace((HWND)windowHWND, dc);
 	return dc;
 }
 
 void* JS_GDI_GetWindowDC(void* windowHWND)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr(windowHWND, "HWND")) return nullptr;
+#endif
 	HDC dc = GetWindowDC((HWND)windowHWND);
-	if (dc) Julian::GDIHDCs.emplace(dc);
+	if (dc) Julian::GDIHDCs.emplace((HWND)windowHWND, dc);
 	return dc;
 }
 
 void* JS_GDI_GetScreenDC()
 {
-	HDC dc = GetDC(NULL);
-	if (dc) Julian::GDIHDCs.emplace(dc);
+	HDC dc = GetDC(nullptr);
+	if (dc) Julian::GDIHDCs.emplace(nullptr, dc);
 	return dc;
 }
 
-void JS_GDI_ReleaseDC(void* windowHWND, void* deviceHDC)
+int JS_GDI_ReleaseDC(void* deviceHDC, void* windowHWNDOptional)
 {
-	if (Julian::GDIHDCs.count((HDC)deviceHDC)) {
-		Julian::GDIHDCs.erase((HDC)deviceHDC);
-		ReleaseDC((HWND)windowHWND, (HDC)deviceHDC);
+	// Return -1 if the HWND/HDC pair has not been created via this extension.
+	// Remember that the HWND and HDC can be passed in any order, for compatibility with previous versions.
+	pair<HWND, HDC> p = make_pair((HWND)windowHWNDOptional, (HDC)deviceHDC);
+	if (!Julian::GDIHDCs.count(p))
+	{
+		p = make_pair((HWND)deviceHDC, (HDC)windowHWNDOptional);
+		if (!Julian::GDIHDCs.count(p))
+			return -1;
 	}
+	Julian::GDIHDCs.erase(p);
+#ifdef _WIN32
+	return ReleaseDC(p.first, p.second);
+#else
+	ReleaseDC(p.first, p.second);
+	return 1;
+#endif
 }
 
 
@@ -3083,6 +3592,7 @@ void JS_GDI_StretchBlit(void* destHDC, int dstx, int dsty, int dstw, int dsth, v
 
 bool JS_Window_GetScrollInfo(void* windowHWND, const char* scrollbar, int* positionOut, int* pageSizeOut, int* minOut, int* maxOut, int* trackPosOut)
 {
+	if (!ValidatePtr(windowHWND, "HWND")) return false;
 	SCROLLINFO si = { sizeof(SCROLLINFO), SIF_ALL, };
 	int nBar = ((strchr(scrollbar, 'v') || strchr(scrollbar, 'V')) ? SB_VERT : SB_HORZ); // Match strings such as "SB_VERT", "VERT" or "v".
 	bool isOK = !!CoolSB_GetScrollInfo((HWND)windowHWND, nBar, &si);
@@ -3096,22 +3606,25 @@ bool JS_Window_GetScrollInfo(void* windowHWND, const char* scrollbar, int* posit
 
 bool JS_Window_SetScrollPos(void* windowHWND, const char* scrollbar, int position)
 {
-	bool isOK;
-	if (strchr(scrollbar, 'v') || strchr(scrollbar, 'V'))
+	bool isOK = false;
+	if (ValidatePtr(windowHWND, "HWND"))
 	{
-		isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_VERT, position, TRUE);
-		if (!isOK)
+		if (strchr(scrollbar, 'v') || strchr(scrollbar, 'V'))
+		{
 			isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_VERT, position, TRUE);
-		if (isOK)
-			SendMessage((HWND)windowHWND, WM_VSCROLL, MAKEWPARAM(SB_THUMBPOSITION, position), 0);
-	}
-	else
-	{
-		isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_HORZ, position, TRUE);
-		if (!isOK)
+			if (!isOK)
+				isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_VERT, position, TRUE);
+			if (isOK)
+				SendMessage((HWND)windowHWND, WM_VSCROLL, MAKEWPARAM(SB_THUMBPOSITION, position), 0);
+		}
+		else
+		{
 			isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_HORZ, position, TRUE);
-		if (isOK)
-			SendMessage((HWND)windowHWND, WM_HSCROLL, MAKEWPARAM(SB_THUMBPOSITION, position), 0);
+			if (!isOK)
+				isOK = !!CoolSB_SetScrollPos((HWND)windowHWND, SB_HORZ, position, TRUE);
+			if (isOK)
+				SendMessage((HWND)windowHWND, WM_HSCROLL, MAKEWPARAM(SB_THUMBPOSITION, position), 0);
+		}
 	}
 	return isOK;
 }
@@ -3119,75 +3632,156 @@ bool JS_Window_SetScrollPos(void* windowHWND, const char* scrollbar, int positio
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // Functions for compositing into REAPER's UI
 
-int JS_Composite(HWND hwnd, int dstx, int dsty, int dstw, int dsth, LICE_IBitmap* sysBitmap, int srcx, int srcy, int srcw, int srch)
+int JS_Composite(HWND hwnd, int dstx, int dsty, int dstw, int dsth, LICE_IBitmap* sysBitmap, int srcx, int srcy, int srcw, int srch, bool autoUpdate = false)
 {
 	using namespace Julian;
-	if (!LICEBitmaps.count(sysBitmap)) return ERR_NOT_BITMAP;
-	HDC bitmapDC = LICEBitmaps[sysBitmap]; if (!bitmapDC) return ERR_NOT_SYSBITMAP; // Is this a sysbitmap?
+	if (!mLICEBitmaps.count(sysBitmap)) return ERR_NOT_BITMAP;
+	if (!mLICEBitmaps[sysBitmap]) return ERR_NOT_SYSBITMAP; // Does this have a linked HDC = Is this a sysbitmap?
+	if (!IsWindow(hwnd)) return ERR_NOT_WINDOW;
+		
+	// If autoUpdate, the composite function will call InvalidateRect to start the blitting, so the destination rect must be calculated.
+	// ALSO: If the window and bitmap were already composited, its destination coordinates may be moving, so the invalidated rect must cover the new as well as the previous dst rect.
+	RECT cR; // Client rect
+	RECT dstR; // Destination rect (that must be Invalidated)
+	if (autoUpdate)
+	{
+		GetClientRect(hwnd, &cR);
+		dstR = { dstx, dsty, dstx + dstw, dsty + dsth };
+		if (dstw == -1) { dstR.left = 0; dstR.right = cR.right; }
+		if (dsth == -1) { dstR.top = 0; dstR.bottom = cR.bottom; }
+	}
 
 	// If window not already intercepted, get original window proc and emplace new struct
-	if (mapWindowData.count(hwnd) == 0) {
-		if (!JS_Window_IsWindow(hwnd)) return ERR_NOT_WINDOW;
+	if (Julian::mapWindowData.count(hwnd) == 0) 
+	{
+		#ifdef _WIN32
+		LONG_PTR origProc = SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		if (!origProc || (origProc == (LONG_PTR)JS_WindowMessage_Intercept_Callback)) // Oops, does this window already have the extension callback as wndproc?  Something went awry.
+			return ERR_ORIG_WNDPROC;
+		if (GetWindowLongPtr(hwnd, GWLP_WNDPROC) != (LONG_PTR)JS_WindowMessage_Intercept_Callback)
+			return ERR_NEW_WNDPROC;
+		#else
+		LONG_PTR origProc = SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
+		if (!origProc || (origProc == (LONG_PTR)JS_WindowMessage_Intercept_Callback)) 
+			return ERR_ORIG_WNDPROC;
+		if (GetWindowLong(hwnd, GWL_WNDPROC) != (LONG_PTR)JS_WindowMessage_Intercept_Callback) 
+			return ERR_NEW_WNDPROC;
+		#endif
 		
-		WNDPROC origProc = nullptr;
-#ifdef _WIN32
-		origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
-#else
-		origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
-#endif
-		if (!origProc) return ERR_ORIGPROC;
-		
-		mapWindowData[hwnd] = sWindowData{ origProc };
+		Julian::mapWindowData[hwnd] = sWindowData{ origProc };
+		Julian::mapWindowData[hwnd].mustInvalidRect = { 0, 0, 0, 0 };
+		Julian::mapWindowData[hwnd].doneInvalidRect = { 0, 0, 0, 0 };
+		Julian::mapWindowData[hwnd].lastTime = 0;
+	}
+
+	// OK, already intercepted.  Are window and bitmap already composited?  Must expand dstR to include previous dst rect, so that old position will also be invalidated, and old image removed.
+	else if (autoUpdate && mapWindowData[hwnd].mapBitmaps.count(sysBitmap))
+	{
+		auto& b = mapWindowData[hwnd].mapBitmaps[sysBitmap];
+		RECT prevR{ b.dstx, b.dsty, b.dstx + b.dstw, b.dsty + b.dsth };
+		if (b.dstw == -1) { prevR.left = 0; prevR.right = cR.right; }
+		if (b.dsth == -1) { prevR.top = 0;  prevR.bottom = cR.bottom; }
+		if (!RECT_IS_EMPTY(prevR))
+			UNION_RECT(dstR, prevR);
 	}
 
 	// OK, hwnd should now be in map. Don't use emplace, since may need to replace previous dst or src RECT of already-linked bitmap
-	mapWindowData[hwnd].mapBitmaps[sysBitmap] = sBitmapData{ dstx, dsty, dstw, dsth, srcx, srcy, srcw, srch };
-	return 1;
+	mapWindowData[hwnd].mapBitmaps[sysBitmap] = sBlitRects{ dstx, dsty, dstw, dsth, srcx, srcy, srcw, srch };
+	
+	if (autoUpdate)
+	{
+		BOOL invalidateOK;
+		RECT& iR = mapWindowData[hwnd].doneInvalidRect;
+
+		// No invalidates yet in this paint cycle, so must send InvalidateRect
+		if (RECT_IS_EMPTY(iR))
+		{
+			iR = dstR;
+			invalidateOK = InvalidateRect(hwnd, &iR, true);
+		}
+		#ifdef _WIN32
+		// WindowsOS: If window is already invalidated, store rect in to-be-invalidated i2R, to be invalidated during WM_PAINT callback 
+		//		(This avoids dozens of overlapping Invalidates in case of scripts with dozens of composited bitmaps, such as Area(51).)
+		else 
+		{
+			RECT& i2R = mapWindowData[hwnd].mustInvalidRect;
+			if (RECT_IS_EMPTY(i2R))
+				i2R = dstR;
+			else
+				UNION_RECT(i2R, dstR);
+			invalidateOK = TRUE;
+		}
+		#else
+		// Linux/macOS: InvalidateRect cannot be called inside WM_PAINT callback, so must invalidate now.  But only necessary if rect expands existing iR.
+		else if (dstR.left < iR.left || dstR.top < iR.top || dstR.right > iR.right || dstR.bottom > iR.bottom)
+		{
+			UNION_RECT(iR, dstR);
+			invalidateOK = InvalidateRect(hwnd, &iR, true);
+		}
+		#endif
+		return invalidateOK ? TRUE : ERR_INVALIDATE;
+	}
+	
+	return TRUE;
 }
 
-/*
-if (LICEBitmaps.count(sysBitmap)) {
-HDC bitmapDC = LICEBitmaps[sysBitmap];
-if (bitmapDC) { // Is this a sysbitmap?
-if (mapWindowData.count(hwnd) == 0) { // If window not already intercepted, get original window proc and emplace new struct
-if (JS_Window_IsWindow(hwnd)) {
-WNDPROC origProc = nullptr;
-#ifdef _WIN32
-origProc = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
-#else
-origProc = (WNDPROC)SetWindowLong(hwnd, GWL_WNDPROC, (LONG_PTR)JS_WindowMessage_Intercept_Callback);
-#endif
-if (origProc)
-mapWindowData.emplace(hwnd, sWindowData{ origProc });
-}
-}
-if (mapWindowData.count(hwnd)) { // OK, hwnd should now be in map
-HDC windowDC = nullptr;
-if (mapWindowData[hwnd].mapBitmaps.count(sysBitmap))
-windowDC = mapWindowData[hwnd].mapBitmaps[sysBitmap].windowDC;
-else
-windowDC = (HDC)JS_GDI_GetClientDC(hwnd);
 
-if (windowDC) {
-mapWindowData[hwnd].mapBitmaps.emplace(sysBitmap, sBitmapData{ windowDC, dstx, dsty, dstw, dsth, bitmapDC, srcx, srcy, srcw, srch });
-return 1;
-}
-}
-}
-}
-return false;
-}*/
-
-void JS_Composite_Unlink(HWND hwnd, LICE_IBitmap* bitmap)
+void JS_Composite_Unlink(HWND hwnd, LICE_IBitmap* bitmap = nullptr, bool autoUpdate = false)
 {
 	using namespace Julian;
-	if (mapWindowData.count(hwnd)) {
-		mapWindowData[hwnd].mapBitmaps.erase(bitmap);
-		if (mapWindowData[hwnd].mapBitmaps.empty() && mapWindowData[hwnd].mapMessages.empty()) {
-			JS_WindowMessage_RestoreOrigProc(hwnd);
-		}
-	}
+	if (mapWindowData.count(hwnd)) 
+	{
+		auto& w = mapWindowData[hwnd];
 
+		if (!bitmap) // Unlink ALL bitmaps from window
+		{
+			w.mapBitmaps.clear();
+
+			if (IsWindow(hwnd))
+			{
+				GetClientRect(hwnd, &w.doneInvalidRect);
+				InvalidateRect(hwnd, &w.doneInvalidRect, true);
+				w.mustInvalidRect = {0, 0, 0, 0};
+			}
+		}
+
+		// Unlinking bitmap should also erase blitted image from hwnd.
+		// Must first store dst rect coordinates, then erase the link, the InvalidateRect the composited area to remove image.
+		else if (w.mapBitmaps.count(bitmap))
+		{
+			sBlitRects b = w.mapBitmaps[bitmap]; // Store existing dst and src rects
+
+			w.mapBitmaps.erase(bitmap); // Erase link
+
+			if (autoUpdate && IsWindow(hwnd))
+			{
+				RECT dstR; GetClientRect(hwnd, &dstR); // Start as client rect, contract to destination image
+				if (b.dstw != -1) { dstR.left = b.dstx; dstR.right = b.dstx + b.dstw; }
+				if (b.dsth != -1) { dstR.top = b.dsty; dstR.bottom = b.dsty + b.dsth; }
+
+				if (!RECT_IS_EMPTY(dstR)) // Was bitmap visible?
+				{
+					RECT& iR = mapWindowData[hwnd].doneInvalidRect;
+
+					// No invalidates yet in this paint cycle, so must send InvalidateRect
+					if (RECT_IS_EMPTY(iR))
+					{
+						iR = dstR;
+						InvalidateRect(hwnd, &iR, true);
+					}
+					// Already invalidated, but rect expands existing iR, 
+					// WARNING: When unlinking bitmaps, RestoreOrigProcAndErase might end up completely removing the intercept, so w.mustInvalidate won't be applied inside WM_PAINT callback
+					//		Must therefore invalidate here.
+					else if (dstR.left < iR.left || dstR.top < iR.top || dstR.right > iR.right || dstR.bottom > iR.bottom)
+					{
+						UNION_RECT(iR, dstR);
+						InvalidateRect(hwnd, &iR, true);
+					}
+				}
+			}
+		}
+		JS_WindowMessage_RestoreOrigProcAndErase();
+	}
 }
 
 int JS_Composite_ListBitmaps(HWND hwnd, char* listOutNeedBig, int listOutNeedBig_sz)
@@ -3199,6 +3793,41 @@ int JS_Composite_ListBitmaps(HWND hwnd, char* listOutNeedBig, int listOutNeedBig
 	return ConvertSetHWNDToString(bitmaps, listOutNeedBig, listOutNeedBig_sz);
 }
 
+// Only applicable to WindowsOS.
+int  JS_Composite_Delay(HWND hwnd, double minTime, double maxTime, int maxBitmaps, double* prevMinTimeOut, double* prevMaxTimeOut, int* prevBitmapsOut)
+{
+	using namespace Julian;
+	// Return previous values
+	if (mapDelayData.count(hwnd))
+	{
+		*prevMinTimeOut = mapDelayData[hwnd].minTime;
+		*prevMaxTimeOut = mapDelayData[hwnd].maxTime;
+		*prevBitmapsOut = mapDelayData[hwnd].maxBitmaps;
+	}
+	else
+	{
+		*prevMinTimeOut = 0;
+		*prevMaxTimeOut = 0;
+		*prevBitmapsOut = 0;
+	}
+
+	// Remove delay settings if all 0
+	if (minTime == 0 && maxTime == 0)
+	{
+		mapDelayData.erase(hwnd);
+		return 1;
+	}
+
+	// Check if new values are acceptable
+	else if (minTime >= 0 && maxTime >= minTime && maxBitmaps > 1)
+	{
+		mapDelayData[hwnd] = sDelayData{ minTime, maxTime, maxBitmaps };
+		return 1;
+	}
+	else
+		return 0;
+}
+
 /////////////////////////////////////////////
 
 void* JS_LICE_CreateBitmap(bool isSysBitmap, int width, int height)
@@ -3207,15 +3836,30 @@ void* JS_LICE_CreateBitmap(bool isSysBitmap, int width, int height)
 	// Immediately get HDC and store, so that all scripts can use the same HDC.
 	if (bm) {
 		HDC dc = LICE__GetDC(bm);
-		Julian::LICEBitmaps[bm] = dc;
+		Julian::mLICEBitmaps[bm] = dc;
 	}
 	return bm;
+}
+
+int JS_LICE_ListAllBitmaps(char* listOutNeedBig, int listOutNeedBig_sz)
+{
+	std::set<HWND> bitmaps;
+	for (auto& i : Julian::mLICEBitmaps) bitmaps.insert((HWND)(void*)i.first);
+	return ConvertSetHWNDToString(bitmaps, listOutNeedBig, listOutNeedBig_sz);
+}
+
+int JS_LICE_ArrayAllBitmaps(double* reaperarray)
+{
+	// Enumerate through all top-level windows and store ther HWNDs in a set. (Sets are nice, since will automatically check for uniqueness.)
+	std::set<HWND> bitmaps;
+	for (auto& i : Julian::mLICEBitmaps) bitmaps.insert((HWND)(void*)i.first);
+	return ConvertSetHWNDToArray(bitmaps, reaperarray);
 }
 
 int JS_LICE_GetHeight(void* bitmap)
 {
 	using namespace Julian;
-	if (LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		return LICE__GetHeight((LICE_IBitmap*)bitmap);
 	else 
 		return 0;
@@ -3224,7 +3868,7 @@ int JS_LICE_GetHeight(void* bitmap)
 int JS_LICE_GetWidth(void* bitmap)
 {
 	using namespace Julian;
-	if (LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		return LICE__GetWidth((LICE_IBitmap*)bitmap);
 	else
 		return 0;
@@ -3233,8 +3877,8 @@ int JS_LICE_GetWidth(void* bitmap)
 void* JS_LICE_GetDC(void* bitmap)
 {
 	using namespace Julian;
-	if (LICEBitmaps.count((LICE_IBitmap*)bitmap))
-		return LICEBitmaps[(LICE_IBitmap*)bitmap];
+	if (mLICEBitmaps.count((LICE_IBitmap*)bitmap))
+		return mLICEBitmaps[(LICE_IBitmap*)bitmap];
 	else
 		return nullptr;
 }
@@ -3243,12 +3887,22 @@ void* JS_LICE_GetDC(void* bitmap)
 void JS_LICE_DestroyBitmap(LICE_IBitmap* bitmap)
 {
 	using namespace Julian;
+	
 	// Also delete any occurence of this bitmap from UI Compositing
-	if (LICEBitmaps.count(bitmap)) {
+	if (mLICEBitmaps.count(bitmap)) 
+	{
+		// DANGEROUS! Unlinking and/or destroying may delete entries in this map,
+		//		which can crash iterator!
+		// So must store matches temporarily in this set:
+		std::set<HWND> linkedWindows;
 		for (auto& m : mapWindowData) {
-			m.second.mapBitmaps.erase(bitmap);
+			if (m.second.mapBitmaps.count(bitmap))	{
+				linkedWindows.insert(m.first);
+			}
 		}
-		LICEBitmaps.erase(bitmap);
+		for (auto& w : linkedWindows) 
+			JS_Composite_Unlink(w, bitmap, true); // Will also InvalidateRect the dst window, may delete mapWindowData if no intercepts.
+		mLICEBitmaps.erase(bitmap);
 		LICE__Destroy(bitmap);
 	}
 }
@@ -3275,9 +3929,17 @@ void JS_LICE_DestroyBitmap(LICE_IBitmap* bitmap)
 					else if (strstr(mode, "HSVADJ"))	intMode = LICE_BLIT_MODE_HSVADJ; \
 					if (strstr(mode, "ALPHA"))	intMode |= LICE_BLIT_USE_ALPHA;
 
+/*	
+Standard LICE modes: "COPY" (default if empty string), "MASK", "ADD", "DODGE", "MUL", "OVERLAY" or "HSVADJ", 
+	any of which may be combined with "ALPHA" to enable per-pixel alpha blending.
+In addition to the standard LICE modes, LICE_Blit also offers:
+	* "CHANCOPY_XTOY", with X and Y any of the four channels, A, R, G or B. (CHANCOPY_ATOA is similar to MASK mode.)
+	* "BLUR" 
+	* "ALPHAMUL", which overwrites the destination with a per-pixel alpha-multiplied copy of the source. (Similar to first clearing the destination with 0x00000000 and then blitting with "COPY,ALPHA".)
+*/
 void JS_LICE_Blit(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height, double alpha, const char* mode)
 {	
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::mLICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
 	{
 		if (strstr(mode, "BLUR"))
 			LICE_Blur((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height);
@@ -3302,20 +3964,20 @@ void JS_LICE_Blit(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int 
 void JS_LICE_RotatedBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double angle, double rotxcent, double rotycent, bool cliptosourcerect, double alpha, const char* mode)
 {
 	GETINTMODE	
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::mLICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
 		LICE_RotatedBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)angle, cliptosourcerect, (float)alpha, intMode, (float)rotxcent, (float)rotycent);
 }
 
 void JS_LICE_ScaledBlit(void* destBitmap, int dstx, int dsty, int dstw, int dsth, void* sourceBitmap, double srcx, double srcy, double srcw, double srch, double alpha, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::mLICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
 		LICE_ScaledBlit((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, dstw, dsth, (float)srcx, (float)srcy, (float)srcw, (float)srch, (float)alpha, intMode);
 }
 
 void JS_LICE_Blur(void* destBitmap, int dstx, int dsty, void* sourceBitmap, int srcx, int srcy, int width, int height)
 {
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::mLICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
 		LICE_Blur((LICE_IBitmap*)destBitmap, (LICE_IBitmap*)sourceBitmap, dstx, dsty, srcx, srcy, width, height);
 }
 
@@ -3323,13 +3985,13 @@ void* JS_LICE_LoadPNG(const char* filename)
 {
 	LICE_IBitmap* sysbitmap = nullptr;
 	LICE_IBitmap* png = nullptr;
-	sysbitmap = LICE_CreateBitmap(TRUE, 1, 1); // By default, does not return a SysBitmap. In order to force the use of SysBitmaps, use must supply own bitmap.
+	sysbitmap = LICE_CreateBitmap(TRUE, 1, 1); // By default, LICE_LoadPNG does not return a SysBitmap. In order to force the use of SysBitmaps, use must supply own bitmap.
 	if (sysbitmap) {
 		png = LICE_LoadPNG(filename, sysbitmap);
 		if (png != sysbitmap) LICE__Destroy(sysbitmap);
 		if (png) {
 			HDC dc = LICE__GetDC(png);
-			Julian::LICEBitmaps.emplace(png, dc);
+			Julian::mLICEBitmaps.emplace(png, dc);
 		}
 	}
 	return png;
@@ -3340,16 +4002,38 @@ bool JS_LICE_WritePNG(const char* filename, LICE_IBitmap* bitmap, bool wantAlpha
 	return LICE_WritePNG(filename, bitmap, wantAlpha);
 }
 
+void* JS_LICE_LoadJPG(const char* filename)
+{
+	LICE_IBitmap* sysbitmap = nullptr;
+	LICE_IBitmap* jpg = nullptr;
+	sysbitmap = LICE_CreateBitmap(TRUE, 1, 1); // By default, LICE_LoadPNG does not return a SysBitmap. In order to force the use of SysBitmaps, use must supply own bitmap.
+	if (sysbitmap) {
+		jpg = LICE_LoadJPG(filename, sysbitmap);
+		if (jpg != sysbitmap) LICE__Destroy(sysbitmap);
+		if (jpg) {
+			HDC dc = LICE__GetDC(jpg);
+			Julian::mLICEBitmaps.emplace(jpg, dc);
+		}
+	}
+	return jpg;
+}
+
+bool JS_LICE_WriteJPG(const char* filename, LICE_IBitmap* bitmap, int quality, bool forceBaseline)
+{
+	return LICE_WriteJPG(filename, bitmap, quality, forceBaseline);
+}
+
+
 void JS_LICE_Circle(void* bitmap, double cx, double cy, double r, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_Circle((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
 bool JS_LICE_IsFlipped(void* bitmap)
 {
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		return LICE__IsFlipped((LICE_IBitmap*)bitmap);
 	else
 		return false;
@@ -3357,7 +4041,7 @@ bool JS_LICE_IsFlipped(void* bitmap)
 
 bool JS_LICE_Resize(void* bitmap, int width, int height)
 {
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		return LICE__resize((LICE_IBitmap*)bitmap, width, height);
 	else
 		return false;
@@ -3366,19 +4050,19 @@ bool JS_LICE_Resize(void* bitmap, int width, int height)
 void JS_LICE_Arc(void* bitmap, double cx, double cy, double r, double minAngle, double maxAngle, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_Arc((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, (float)minAngle, (float)maxAngle, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
 void JS_LICE_Clear(void* bitmap, int color)
 {
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_Clear((LICE_IBitmap*)bitmap, (LICE_pixel)color);
 }
 
 bool JS_LICE_Blit_AlphaMultiply(LICE_IBitmap* destBitmap, int dstx, int dsty, LICE_IBitmap* sourceBitmap, int srcx, int srcy, int width, int height, double alpha)
 {
-	//if (Julian::LICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::LICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
+	//if (Julian::mLICEBitmaps.count((LICE_IBitmap*)destBitmap) && Julian::mLICEBitmaps.count((LICE_IBitmap*)sourceBitmap))
 	int srcr = srcx + width;
 	int srcb = srcy + height;
 
@@ -3505,7 +4189,7 @@ void JS_LICE_SetFontColor(void* LICEFont, int color)
 int JS_LICE_DrawText(void* bitmap, void* LICEFont, const char* text, int textLen, int x1, int y1, int x2, int y2)
 {
 	RECT r{ x1, y1, x2, y2 };
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		return LICE__DrawText((LICE_IFont*)LICEFont, (LICE_IBitmap*)bitmap, text, textLen, &r, 0); // I don't know what UINT dtFlags does, so make 0.
 	else
 		return 0;
@@ -3514,7 +4198,7 @@ int JS_LICE_DrawText(void* bitmap, void* LICEFont, const char* text, int textLen
 void JS_LICE_DrawChar(void* bitmap, int x, int y, char c, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_DrawChar((LICE_IBitmap*)bitmap, x, y, c, (LICE_pixel)color, (float)alpha, intMode);
 }
 
@@ -3526,62 +4210,62 @@ void JS_LICE_MeasureText(const char* string, int* widthOut, int* heightOut)
 void JS_LICE_FillRect(void* bitmap, int x, int y, int w, int h, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_FillRect((LICE_IBitmap*)bitmap, x, y, w, h, (LICE_pixel)color, (float)alpha, intMode);
 }
 
 void JS_LICE_RoundRect(void* bitmap, double x, double y, double w, double h, int cornerradius, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_RoundRect((LICE_IBitmap*)bitmap, (float)x, (float)y, (float)w, (float)h, cornerradius, color, (float)alpha, intMode, antialias);
 }
 
 void JS_LICE_GradRect(void* bitmap, int dstx, int dsty, int dstw, int dsth, double ir, double ig, double ib, double ia, double drdx, double dgdx, double dbdx, double dadx, double drdy, double dgdy, double dbdy, double dady, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_GradRect((LICE_IBitmap*)bitmap, dstx, dsty, dstw, dsth, (float)ir, (float)ig, (float)ib, (float)ia, (float)drdx, (float)dgdx, (float)dbdx, (float)dadx, (float)drdy, (float)dgdy, (float)dbdy, (float)dady, intMode);
 }
 
 void JS_LICE_FillTriangle(void* bitmap, int x1, int y1, int x2, int y2, int x3, int y3, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_FillTriangle((LICE_IBitmap*)bitmap, x1, y1, x2, y2, x3, y3, color, (float)alpha, intMode);
 }
 
 void JS_LICE_FillPolygon(void* bitmap, const char* packedX, const char* packedY, int numPoints, int color, double alpha, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_FillConvexPolygon((LICE_IBitmap*)bitmap, (int32_t*)packedX, (int32_t*)packedY, numPoints, color, (float)alpha, intMode);
 }
 
 void JS_LICE_FillCircle(void* bitmap, double cx, double cy, double r, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_FillCircle((LICE_IBitmap*)bitmap, (float)cx, (float)cy, (float)r, color, (float)alpha, intMode, antialias);
 }
 
 void JS_LICE_Line(void* bitmap, double x1, double y1, double x2, double y2, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_Line((LICE_IBitmap*)bitmap, (float)x1, (float)y1, (float)x2, (float)y2, (LICE_pixel)color, (float)alpha, intMode, antialias);
 }
 
 void JS_LICE_Bezier(void* bitmap, double xstart, double ystart, double xctl1, double yctl1, double xctl2, double yctl2, double xend, double yend, double tol, int color, double alpha, const char* mode, bool antialias)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_DrawCBezier((LICE_IBitmap*)bitmap, xstart, ystart, xctl1, yctl1, xctl2, yctl2, xend, yend, (LICE_pixel)color, (float)alpha, intMode, antialias, tol);
 }
 
 void JS_LICE_GetPixel(void* bitmap, int x, int y, double* colorOut)
 {
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		*colorOut = (double)(LICE_GetPixel((LICE_IBitmap*)bitmap, x, y));
 	else
 		*colorOut = -1;
@@ -3590,7 +4274,7 @@ void JS_LICE_GetPixel(void* bitmap, int x, int y, double* colorOut)
 void JS_LICE_PutPixel(void* bitmap, int x, int y, double color, double alpha, const char* mode)
 {
 	GETINTMODE
-	if (Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap))
+	if (Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap))
 		LICE_PutPixel((LICE_IBitmap*)bitmap, x, y, (LICE_pixel)color, (float)alpha, intMode);
 }
 
@@ -3632,7 +4316,7 @@ bool JS_LICE_ProcessRect(LICE_IBitmap* bitmap, int x, int y, int w, int h, const
 {
 	// In order to avoid the overhead of a separate function call for each pixel, 
 	//		this code is copied from Cockos's lice.h.
-	if (!Julian::LICEBitmaps.count((LICE_IBitmap*)bitmap)) return false;
+	if (!Julian::mLICEBitmaps.count((LICE_IBitmap*)bitmap)) return false;
 
 	if (x<0) { w += x; x = 0; }
 	if (y<0) { h += y; y = 0; }
@@ -3780,16 +4464,25 @@ void JS_Window_AttachResizeGrip(void* windowHWND)
 
 int JS_ListView_GetItemCount(HWND listviewHWND)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) return -1;
+#endif
 	return ListView_GetItemCount(listviewHWND);
 }
 
 int JS_ListView_GetSelectedCount(HWND listviewHWND)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) return -1;
+#endif
 	return ListView_GetSelectedCount(listviewHWND);
 }
 
 int JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) return -1;
+#endif
 	int index = ListView_GetNextItem(listviewHWND, -1, LVNI_FOCUSED);
 	if (index != -1) {
 		ListView_GetItemText(listviewHWND, index, 0, textOut, textOut_sz); }
@@ -3800,21 +4493,30 @@ int JS_ListView_GetFocusedItem(HWND listviewHWND, char* textOut, int textOut_sz)
 
 void JS_ListView_EnsureVisible(HWND listviewHWND, int index, bool partialOK)
 {
+#ifdef _WDL_SWELL
+	if (ValidatePtr((HWND)listviewHWND, "HWND"))
+#endif
 	ListView_EnsureVisible(listviewHWND, index, partialOK);
 }
 
 int JS_ListView_EnumSelItems(HWND listviewHWND, int index)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) return -1;
+#endif
 	// WDL/swell doesn't offer all these flag options, so this function only offers SELECTED:
 	return ListView_GetNextItem(listviewHWND, index, LVNI_SELECTED);
 }
 
 void JS_ListView_GetItem(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz, int* stateOut)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) {	textOut[0] = 0; *stateOut = 0; return; }
+#endif
 	ListView_GetItemText(listviewHWND, index, subItem, textOut, textOut_sz);
 	*stateOut = ListView_GetItemState(listviewHWND, index, LVIS_SELECTED | LVIS_FOCUSED);
 	// WIN32 and swell define LVIS_SELECTED and LVIS_FOCUSED differently, so if swell, swap values:
-	#ifndef _WIN32
+	#ifdef _WDL_SWELL
 	if (((*stateOut) & LVIS_SELECTED) && !((*stateOut) & LVIS_FOCUSED))
 	{
 		*stateOut |= LVIS_FOCUSED;
@@ -3830,9 +4532,12 @@ void JS_ListView_GetItem(HWND listviewHWND, int index, int subItem, char* textOu
 
 int JS_ListView_GetItemState(HWND listviewHWND, int index)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) return 0;
+#endif
 	int state = ListView_GetItemState(listviewHWND, index, LVIS_SELECTED | LVIS_FOCUSED);
 	// WIN32 and swell define LVIS_SELECTED and LVIS_FOCUSED differently, so if swell, swap values:
-	#ifndef _WIN32
+	#ifdef _WDL_SWELL
 	if ((state & LVIS_SELECTED) && !(state & LVIS_FOCUSED))
 	{
 		state |= LVIS_FOCUSED;
@@ -3849,11 +4554,17 @@ int JS_ListView_GetItemState(HWND listviewHWND, int index)
 
 void JS_ListView_GetItemText(HWND listviewHWND, int index, int subItem, char* textOut, int textOut_sz)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) {	textOut[0] = 0; return; }
+#endif
 	ListView_GetItemText(listviewHWND, index, subItem, textOut, textOut_sz);
 }
 
 int JS_ListView_ListAllSelItems(HWND listviewHWND, char* itemsOutNeedBig, int itemsOutNeedBig_sz)
 {
+#ifdef _WDL_SWELL
+	if (!ValidatePtr((HWND)listviewHWND, "HWND")) { itemsOutNeedBig[0] = 0; return 0; }
+#endif
 	using namespace Julian;
 
 	std::vector<int> items;
